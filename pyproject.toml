@@ -1,0 +1,82 @@
+[project]
+name = "jdluc"
+version = "0.1.0"
+description = "Cornerstone jdLUC: high-resolution jurisdictional direct LUC methodology, and pipeline for US row crops."
+readme = "README.md"
+requires-python = ">=3.14,<3.15"
+
+dependencies = [
+    "earthengine-api",
+    "geemap",
+    "google-api-python-client",
+    "google-auth-oauthlib",
+    "google-cloud-bigquery",
+    "google-cloud-storage",
+    "netCDF4",
+    "pandas",
+    "requests",
+    "rioxarray",
+    "xarray",
+]
+
+[dependency-groups]
+dev = [
+    "mypy",
+    "pandas-stubs",
+    "pre-commit",
+    "pytest",
+    "types-requests",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+addopts = "-s -v -m 'not integration'"
+markers = [
+    "integration: Integration tests that require GEE / GCS / BQ credentials.",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+log_cli_level = "INFO"
+
+[tool.ruff]
+preview = true
+line-length = 88
+lint.extend-ignore = [
+    "BLE001",  # blind-except — used intentionally in extract / publish wrappers
+    "SIM117",  # nested with statements — clearer when patches are listed
+    "SIM103",  # collapsing two-line is/None branch reads worse here
+    "UP007",   # `Union[X, Y]` → `X | Y` (we still use Union in some signatures)
+    "RUF015",  # `next(iter(...))` over `[0]` slice — both are fine
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/__tests__/**/*.py" = ["ARG001", "ARG002"]
+
+[[tool.mypy.overrides]]
+module = [
+    "google",
+    "google.*",
+    "google.cloud",
+    "google.cloud.storage",
+    "google.cloud.storage.*",
+]
+ignore_missing_imports = true
+follow_imports = "skip"
+implicit_reexport = true
+
+[tool.importlinter]
+root_package = "jdluc"
+
+[[tool.importlinter.contracts]]
+name = "ETL pipeline direction"
+type = "layers"
+layers = [
+    "jdluc.pipeline",
+    "jdluc.publish",
+    "jdluc.transform",
+    "jdluc.extract",
+]

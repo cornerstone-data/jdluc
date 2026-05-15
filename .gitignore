@@ -1,0 +1,12 @@
+# Python build / venv / caches
+__pycache__/
+
+# Editor / OS noise
+.DS_Store
+.vscode/
+.idea/
+.claude/
+
+# Notebook scratch — version-controlled notebooks live under specs/analyses/ only.
+*.ipynb
+.ipynb_checkpoints/
