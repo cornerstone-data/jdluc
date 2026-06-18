@@ -1,26 +1,17 @@
 exclude: |
   (?x)^(specs/analyses/)
 repos:
-  # mypyc-compiled black is ~2x faster than the upstream wheel.
-  - repo: https://github.com/psf/black-pre-commit-mirror
-    rev: 24.4.1
-    hooks:
-      - id: black
-        language_version: python3.14
-        args: [--skip-string-normalization]
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.12
+    rev: v0.15.13
     hooks:
-      - id: ruff
-        args: [--fix]
-
+      - id: ruff-check
+        args: [--fix, "--select=F,I,UP"]
+      - id: ruff-format
   - repo: https://github.com/seddonym/import-linter
     rev: v2.11
     hooks:
       - id: import-linter
         language: python
-
   # Run mypy within the venv so that libraries are visible
   - repo: local
     hooks:
@@ -29,3 +20,9 @@ repos:
         language: system
         entry: uv run mypy jdluc
         pass_filenames: false
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace

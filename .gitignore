@@ -10,3 +10,6 @@ __pycache__/
 # Notebook scratch — version-controlled notebooks live under specs/analyses/ only.
 *.ipynb
 .ipynb_checkpoints/
+
+# Env
+.env

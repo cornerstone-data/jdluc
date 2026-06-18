@@ -6,17 +6,21 @@ readme = "README.md"
 requires-python = ">=3.14,<3.15"
 
 dependencies = [
-    "earthengine-api",
-    "geemap",
-    "google-api-python-client",
-    "google-auth-oauthlib",
-    "google-cloud-bigquery",
+    "GitPython",
+    "dask",
+    "gcsfs",
+    "geopandas",
     "google-cloud-storage",
     "netCDF4",
+    "networkx",
     "pandas",
+    "pyarrow",
+    "python-dotenv",
     "requests",
+    "rio-cogeo",
     "rioxarray",
     "xarray",
+    "zarr",
 ]
 
 [dependency-groups]
@@ -25,6 +29,8 @@ dev = [
     "pandas-stubs",
     "pre-commit",
     "pytest",
+    "types-geopandas",
+    "types-networkx",
     "types-requests",
 ]
 
@@ -35,26 +41,12 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 addopts = "-s -v -m 'not integration'"
 markers = [
-    "integration: Integration tests that require GEE / GCS / BQ credentials.",
+    "integration: tests requiring live GCS credentials; excluded by default (run with `-m integration`).",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
 log_cli_level = "INFO"
-
-[tool.ruff]
-preview = true
-line-length = 88
-lint.extend-ignore = [
-    "BLE001",  # blind-except — used intentionally in extract / publish wrappers
-    "SIM117",  # nested with statements — clearer when patches are listed
-    "SIM103",  # collapsing two-line is/None branch reads worse here
-    "UP007",   # `Union[X, Y]` → `X | Y` (we still use Union in some signatures)
-    "RUF015",  # `next(iter(...))` over `[0]` slice — both are fine
-]
-
-[tool.ruff.lint.per-file-ignores]
-"**/__tests__/**/*.py" = ["ARG001", "ARG002"]
 
 [[tool.mypy.overrides]]
 module = [
@@ -63,6 +55,8 @@ module = [
     "google.cloud",
     "google.cloud.storage",
     "google.cloud.storage.*",
+    "rasterio",
+    "rasterio.*",
 ]
 ignore_missing_imports = true
 follow_imports = "skip"
@@ -72,11 +66,12 @@ implicit_reexport = true
 root_package = "jdluc"
 
 [[tool.importlinter.contracts]]
-name = "ETL pipeline direction"
+name = "ETL"
 type = "layers"
 layers = [
-    "jdluc.pipeline",
-    "jdluc.publish",
-    "jdluc.transform",
-    "jdluc.extract",
+    "jdluc.emissions_factors",
+    "jdluc.attribution",
+    "jdluc.emissions",
+    "jdluc.harmonize",
+    "jdluc.ingest",
 ]

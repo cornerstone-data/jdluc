@@ -10,7 +10,7 @@ Other providers instead fold peat drainage into their land use change (LUC) fram
 
 At least one provider has built a hybrid approach, where peatland drained within the last 20 years has emissions treated as LUC, while older peatland is treated as LM. This seems a promising variation, but without further refinement, it results in attributing _higher_ emissions to long-drained peatland than more recently drained areas under the GHGP discounting framework, a clearly erroneous outcome.
 
-This document presents an alternative two-part model for estimating peatland drainage emissions within the GHGP/LSRS framework as a _combination_ of an initial pulse of land use change emissions for the 20 years after conversion, followed by steady state land management emissions that persist across decades. This can be seen as an evolution of the current state-of-the-art hybrid approach. However *both* types of emissions are attributed to all peatlands, with their relative importance shifting as time passes from initial drainage. 
+This document presents an alternative two-part model for estimating peatland drainage emissions within the GHGP/LSRS framework as a _combination_ of an initial pulse of land use change emissions for the 20 years after conversion, followed by steady state land management emissions that persist across decades. This can be seen as an evolution of the current state-of-the-art hybrid approach. However *both* types of emissions are attributed to all peatlands, with their relative importance shifting as time passes from initial drainage.
 
 The resulting model is grounded in the physical evidence of how peat carbon behaves after drainage, while integrating directly into the GHGP accounting framework.
 
@@ -22,7 +22,7 @@ Peatlands accumulate organic matter over millennia under waterlogged, anaerobic 
 
 This carbon store is maintained by high water levels. When the water table is at or near the surface, oxygen cannot penetrate the peat, and decomposition proceeds slowly — limited to anaerobic pathways that produce methane but preserve the bulk of the organic matter. When peatland is converted to agricultural usage, it's systematically drained, setting off a number of GHG release pathways:
 
-- **Gaseous CO₂, CH₄, and N₂O from peat oxidation** is the dominant effect: lowering the water table exposes the upper peat profile to oxygen, activating aerobic microbial decomposition and converting stored carbon in the drained zone above the water table to CO₂ in the air. Nitrogen locked in peat organic matter is likewise broken down and made available for nitrification and denitrification. 
+- **Gaseous CO₂, CH₄, and N₂O from peat oxidation** is the dominant effect: lowering the water table exposes the upper peat profile to oxygen, activating aerobic microbial decomposition and converting stored carbon in the drained zone above the water table to CO₂ in the air. Nitrogen locked in peat organic matter is likewise broken down and made available for nitrification and denitrification.
 - **Dissolved organic carbon exported via drainage water** is the second major release pathway. Lowering peatland water tables is not a one-time event: drainage is maintained through a complex series of ditches. As rainwater repeatedly flows through the peat matrix, it flushes carbon rich organic compounds into the water system. The majority subsequently decays to CO₂ in downstream waterways. Evans et al., 2016 estimated that dissolved carbon contributes up to 25% of total peatland carbon fluxes.
 - **CH₄ emissions from drainage ditches** are a third source. While peatland drainage reduces CH₄ emissions from the peat surface (by eliminating anaerobic conditions), the ditch network creates new anaerobic zones that emit CH₄ at significant rates (IPCC, 2014).
 - **Finally, peatland fires** are an episodic but catastrophic pathway, particularly in tropical peatlands. Drained peat is highly flammable, and fire events can release more carbon in days than annual oxidative losses produce in years. Peatland fires are excluded from the current methodology, and are an area for future improvement.
@@ -43,7 +43,7 @@ Although the scientific literature is clear on the general pathways and time-ser
 
 Two principal methods are used to quantify carbon losses from drained peatlands, and they systematically produce different estimates.
 
-**Flux measurements** (eddy covariance towers and closed chambers) directly measure gaseous exchange between the peat surface and the atmosphere. Eddy covariance provides continuous, landscape-scale data; chambers provide spatially targeted but temporally sparse measurements. Both include root respiration (not a peat carbon loss, must be somehow estimated and subtracted out) alongside the peat decomposition signal and exclude waterborne carbon losses. 
+**Flux measurements** (eddy covariance towers and closed chambers) directly measure gaseous exchange between the peat surface and the atmosphere. Eddy covariance provides continuous, landscape-scale data; chambers provide spatially targeted but temporally sparse measurements. Both include root respiration (not a peat carbon loss, must be somehow estimated and subtracted out) alongside the peat decomposition signal and exclude waterborne carbon losses.
 
 **Subsidence monitoring** measures the physical lowering of the peat surface over time and converts it to carbon loss using measured bulk density and carbon content. It integrates oxidative decomposition and dissolved organic carbon export, but can be confounded by physical compaction which lowers the peat surface without exporting CO₂, especially in the first years after drainage.
 
@@ -51,11 +51,11 @@ The result of the different boundaries from the two basic measurement approaches
 
 ### IPCC Tier 1 emission factors
 
-The IPCC 2013 Wetlands Supplement made an attempt to consolidate all the best evidence on peatland emissions to that point, and provided Tier 1 default emission factors for drained organic soils, stratified by climate zone and post-drainage land use. 
+The IPCC 2013 Wetlands Supplement made an attempt to consolidate all the best evidence on peatland emissions to that point, and provided Tier 1 default emission factors for drained organic soils, stratified by climate zone and post-drainage land use.
 
-The table below shows these emissions factors. 
+The table below shows these emissions factors.
 
-| Climate zone | Land use | CO₂ oxidation | Dissolved carbon | CH₄ | N₂O | **Total** | 
+| Climate zone | Land use | CO₂ oxidation | Dissolved carbon | CH₄ | N₂O | **Total** |
 |---|---|---|---|---|---|---|
 | **Tropical** | Acacia | 73.3 | 3.0 | 1.3 | 1.0 | **78.6** |
 | | Cropland | 51.3 | 3.0 | 1.4 | 2.1 | **57.9** |
@@ -81,7 +81,7 @@ Two studies have attempted to model peatland emission rate declines over multi-d
 E_DNDC(t) = Σᵢ Aᵢ × exp(-kᵢ × t)    for i = each of 4 pools
 ```
 
-**Qiu et al. (2021)** used the ORCHIDEE-PEAT land surface model to simulate historical carbon emissions from cultivated northern peatlands. ORCHIDEE also models soil carbon decomposition based on first-order kinetics and turnover times, however, using three carbon pools instead of four (active, slow, passive). 
+**Qiu et al. (2021)** used the ORCHIDEE-PEAT land surface model to simulate historical carbon emissions from cultivated northern peatlands. ORCHIDEE also models soil carbon decomposition based on first-order kinetics and turnover times, however, using three carbon pools instead of four (active, slow, passive).
 
 ## A simplified model for GHGP reporting
 
@@ -107,19 +107,19 @@ E_CO₂(t) = A_fast × exp(-k_fast × t) + A_slow × exp(-k_slow × t) + C
 
 This equation approximates the three pool model from Qiu et al. (2021) (active, slow, passive). We fit the double exponential plus constant to Figure S11B from the paper, which plots their modeled emissions decay curve for peatlands converted in 1900. We then repeat this process for Fig. 6 from Swails et al. (2022), which shows modeled CO₂ for the first 30 years of tropical palm plantations.
 
-Notably, the Swails et al. modeled tropical emissions curve is *lower* than the Qiu et al. temperate emissions curve at all years. This is surprising: there is a theoretical basis to suspect that emissions rates from peat should be higher in tropical regions than temperate and boreal regions — decay is highly temperature dependent, with most models suggesting organic compounds should degrade to CO₂ at least 2x faster for every 10 degrees of average temperature increase. The reversal of the expected relationship in the Qiu and Swails studies is partially explained by the fact that the Qiu curve represents gross peat decomposition, while the Swails curve represents net emissions (after vegetation carbon offsets). But this provides only a partial explanation. 
+Notably, the Swails et al. modeled tropical emissions curve is *lower* than the Qiu et al. temperate emissions curve at all years. This is surprising: there is a theoretical basis to suspect that emissions rates from peat should be higher in tropical regions than temperate and boreal regions — decay is highly temperature dependent, with most models suggesting organic compounds should degrade to CO₂ at least 2x faster for every 10 degrees of average temperature increase. The reversal of the expected relationship in the Qiu and Swails studies is partially explained by the fact that the Qiu curve represents gross peat decomposition, while the Swails curve represents net emissions (after vegetation carbon offsets). But this provides only a partial explanation.
 
 The IPCC reference values for CO₂ emissions show a similar pattern.  Although the absolute IPCC factors are higher for tropical regions, the difference is no larger than the gap that would be expected from age differences alone, if the general shape of the Swails and Qiu curves is correct. In other words, the IPCC data points also fail to show higher tropical emissions, once corrected for age of the measured sites.
 
 Given these observations, we do not attempt to build regional or crop specific curves. Rather we simply use a blended version of the Swails model, the Qiu model, and the IPCC values to construct a single reference CO₂ emissions curve for all climate zones and land use types. We generate this curve by:
 
 - adjusting the Swails value to match IPCC tropical palm EF at year 10 (the approximate midpoint of the sites used to generate that value); we leave the Qiu curve as is, since it's already reasonably well calibrated to the IPCC values
-- build a new dataset that includes the averages of the Qiu and recalibrated Swails curves for years 1 through 20, and the IPCC temperate/boreal cropland CO₂ value (29.0 t CO₂ ha⁻¹ yr⁻¹) for steady state in the out years, 
-- fitting a new double exponential to the resulting data points 
+- build a new dataset that includes the averages of the Qiu and recalibrated Swails curves for years 1 through 20, and the IPCC temperate/boreal cropland CO₂ value (29.0 t CO₂ ha⁻¹ yr⁻¹) for steady state in the out years,
+- fitting a new double exponential to the resulting data points
 
 We use the cropland value for the steady state because recent literature has undermined the evidence that long-drained peatland has lower emissions on grassland (Holzknecht et al. 2025, Keck et al. 2024); as between the cropland and grassland values, the more recent studies better support the IPCC's cropland EF (Tiemeyer et al., 2020); and in any event this approach ensures the model errs on the side of conservatism. Admittedly, the final single, cross-region, cross-crop curve may be an oversimplification, but we do not see sufficient data to support a more varied approach at this time. This could be an area for future iteration.
 
-Relative to the IPCC values, our final blended curve closely matches the IPCC value for oil palm in the relevant time period, is slightly below the IPCC values for tropical acacia and cropland, and then matches the long-term cropland values for boreal and temperate locations. Notably, the IPCC acacia value — the largest outlier — has been questioned in the more recent literature because it is based on subsidence measurements in extremely young plantations, which are disproportionately inflated by compaction. (Deshmukh et al., 2023). 
+Relative to the IPCC values, our final blended curve closely matches the IPCC value for oil palm in the relevant time period, is slightly below the IPCC values for tropical acacia and cropland, and then matches the long-term cropland values for boreal and temperate locations. Notably, the IPCC acacia value — the largest outlier — has been questioned in the more recent literature because it is based on subsidence measurements in extremely young plantations, which are disproportionately inflated by compaction. (Deshmukh et al., 2023).
 
 The figure below shows the Swails and Qiu curves, the IPCC emissions factors along with the approximate ages of the sites they represent (based on a partial review of the citations in the Wetlands Supplement), and the final blended reference curve.
 
@@ -139,7 +139,7 @@ Next, we add non-CO₂ pathways — dissolved organic carbon (DOC), ditch CH₄,
 | Boreal       | Cropland | 7.6                          |
 | Boreal       | Pasture  | 6.1                          |
 
-As in the previous section, we construct a time-varying non-CO₂ curve. In this case, we just use the IPCC sites directly as a smooth blend between the early acacia values and the late cropland values.  
+As in the previous section, we construct a time-varying non-CO₂ curve. In this case, we just use the IPCC sites directly as a smooth blend between the early acacia values and the late cropland values.
 
 - **Years 1–10:** Non-CO₂ ≈ 5.3 t CO₂-eq ha⁻¹ yr⁻¹ (tropical acacia value, reflecting young drainage)
 - **Years 40+:** Non-CO₂ ≈ 8.3 t CO₂-eq ha⁻¹ yr⁻¹ (temperate cropland value, reflecting mature drainage)
@@ -155,7 +155,7 @@ Note that the IPCC N₂O emission factors are intended to capture N₂O from min
 
 Finally we use the updated reference curve — now including both CO₂ and non-CO₂ emissions — to set the two parameters of our GHGP model.
 
-First we set **E_LM** equal to the steady-state of the all-GHG reference curve: the CO₂ floor plus the long-run non-CO₂ asymptote (temperate cropland value). That is **37.3 t CO₂-eq ha⁻¹ yr⁻¹**. 
+First we set **E_LM** equal to the steady-state of the all-GHG reference curve: the CO₂ floor plus the long-run non-CO₂ asymptote (temperate cropland value). That is **37.3 t CO₂-eq ha⁻¹ yr⁻¹**.
 
 Second, we set **P_LUC** by least-squares fit of the GHGP linear ramp to the all-GHG reference curve over years 1 to 20, with E_LM fixed from the previous step. That comes to **621 t CO₂ ha⁻¹**.
 
@@ -167,11 +167,11 @@ The linear ramp undershoots the reference curve in year 1 and slightly overshoot
 
 ## Calculations
 
-See the [accompanying python notebook](../notebooks/peatland_emissions_modeling.ipynb) for curve fits and related calculations.
+See the [accompanying python notebook](analyses/peatland_emissions_modeling.ipynb) for curve fits and related calculations.
 
 ## Appendix: IPCC Literature Review
 
-This catalogues a partial review of IPCC citations. We believe these to be representative (the IPCC Wetlands Supplement acknowledges the age difference between sites used for the published EFs), but completing this review is an area for refinement. 
+This catalogues a partial review of IPCC citations. We believe these to be representative (the IPCC Wetlands Supplement acknowledges the age difference between sites used for the published EFs), but completing this review is an area for refinement.
 
 | IPCC Category | Papers reviewed | Sites with age data | Est. drainage age range |
 |---|---|---|---|
@@ -196,7 +196,7 @@ This catalogues a partial review of IPCC citations. We believe these to be repre
 
 - IPCC (2014). 2013 Supplement to the 2006 IPCC Guidelines for National Greenhouse Gas Inventories: Wetlands. Hiraishi, T., et al. (eds). IPCC, Switzerland.
 
-- Keck H, Meurer KHE, Jordan S, Kätterer T, Hadden D and Grelle A (2024) Setting-aside cropland did not reduce greenhouse gas emissions from a drained peat soil in Sweden. Front. Environ. Sci. 12:1386134. 
+- Keck H, Meurer KHE, Jordan S, Kätterer T, Hadden D and Grelle A (2024) Setting-aside cropland did not reduce greenhouse gas emissions from a drained peat soil in Sweden. Front. Environ. Sci. 12:1386134.
 
 - Leifeld, J., Klein, K. & Wüst-Galley, C. (2018). Peat decomposability in managed organic soils in relation to land use, organic matter composition and temperature. *Biogeosciences*, 15, 703–719.
 

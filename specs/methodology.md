@@ -7,7 +7,7 @@ This document describes an LSRS-compliant jdLUC methodology for estimating land 
 The core of the methodology is the Global Land Cover and Land Use Change dataset produced by the University of Maryland and the Land & Carbon Lab (GLAD GLC; CC BY 4.0). This dataset provides the main underlying land use time series. It provides land cover at 5-year epochs from 2000-2020, at 30m resolution. We chose to build off this dataset because:
 
 - **Accuracy**: An [independent validation](https://landcarbonlab.org/insights/global-land-cover-maps-accuracy-applications/) by Land & Carbon Lab and Wageningen University found GLAD GLC had the second-highest global accuracy of the leading high resolution land cover datasets, with the best forest accuracy. The dataset with the highest overall accuracy (ESA's WorldCover) has only 2020 and 2021 maps, generated with different algorithms, making it unsuitable for change detection.
-- **Temporal consistency**: GLC uses the same classification model across all epochs (2000, 2005, 2010, 2015, 2020), which ensures detected changes reflect real land cover change rather than methodological drift. 
+- **Temporal consistency**: GLC uses the same classification model across all epochs (2000, 2005, 2010, 2015, 2020), which ensures detected changes reflect real land cover change rather than methodological drift.
 - **Simplicity**: GLC covers all land cover types, which eliminates the need to reconcile different datasets for forests, grasslands, etc.
 - **Historical coverage**: GLC's coverage extends back to 2000, which eliminates the need for backfill methodologies.
 - **Global extensibility**: GLC works worldwide.
@@ -22,35 +22,37 @@ Finally, we use the USDA Cropland Data Layer to identify the specific row crop g
 
 ### Pixels
 
-We use the GLAD GLC native 30-meter resolution (Landsat-based, 0.00025 degrees) as the common geospatial reference for all data. All other raster inputs are resampled and/or reprojected to align with this grid.
+We use the GLAD GLC native 30-meter resolution (Landsat-based, 0.00025 degrees) as the common geospatial reference for all data. All other raster inputs are resampled and/or reprojected to align with this grid. Source datasets are ingested as 10° tiles and mosaicked onto this common grid (via GDAL VRT warping) at 4,000 pixels per degree.
 
-### State boundaries
+### Jurisdiction boundaries
 
-We use the US Census Bureau TIGER/Line state boundaries to assign each pixel to a US state. The data is available in the GEE catalog as `TIGER/2018/States`. For pixels that overlap state boundaries, we assign to the state containing the pixel centroid.
+We assign each pixel to a jurisdiction using the World Bank Official Boundaries (CC BY 4.0), a three-level administrative hierarchy: Admin 0 (national), Admin 1 (provincial/state), and Admin 2 (district/county). US states correspond to the provincial (Admin 1) level, with World Bank admin IDs `USA001`…`USA051`; the `STATE_FIPS_TO_ADMIN_ID` bridge in `jdluc/datasets/usda_nass_quickstats.py` maps US Census state FIPS codes to these IDs. Pixels are assigned by clipping the emissions raster to each jurisdiction polygon (`rio.clip`, `drop=False`), not by pixel centroid. Using a global administrative hierarchy in place of US-only state boundaries lets the same pipeline roll emissions up to any jurisdiction worldwide.
+
+*Reference:* World Bank Official Boundaries, https://datacatalog.worldbank.org/search/dataset/0038272/world-bank-official-boundaries (CC BY 4.0).
 
 ## Cataloging emissions drivers
 
-For every ~30m pixel in the continental United States, we build a time series of land-cover transitions between the five epochs in the GLAD GLC dataset: 2000 → 2005 → 2010 → 2015 → 2020. 
+For every ~30m pixel in the continental United States, we build a time series of land-cover transitions between the five epochs in the GLAD GLC dataset: 2000 → 2005 → 2010 → 2015 → 2020.
 
 In addition, we catalogue a binary value specifying whether the pixel is peatland and each pixel's IPCC climate domain.
 
 ### Land cover transitions
 
-We load the GLAD GLCLUC v2 combined maps from GEE at `projects/glad/GLCLU2020/v2/LCLUC_{year}`.
+We ingest the GLAD GLCLUC v2 combined annual maps directly from the published Hansen GeoTIFFs at `https://storage.googleapis.com/earthenginepartners-hansen/GLCLU2000-2020/v2/{year}/{tile_id}.tif`.
 
-GLAD GLCLUC encodes land cover as unsigned 8-bit values. We simplify to land use categories as follows:
+GLAD GLCLUC encodes land cover as unsigned 8-bit values. We collapse them into the 7-member `LandClass` enum (`jdluc/datasets/glad_glcluc.py`):
 
-| GLAD GLCLUC pixel values | Land use category |
+| Land class | GLAD GLCLUC values |
 |---|---|
-| 25–48 | Forest (terra firma tree cover, by canopy height 3m to >25m) |
-| 125–148 | Wetland forest |
-| 1–24 | Short vegetation (grassland, shrubland, sparse vegetation gradient) |
-| 100–124 | Wetland short vegetation |
-| 244 | Cropland |
-| 250 | Built-up |
-| 200–207 | Water |
-| 241 | Snow/ice |
-| 0 | Bare (3% vegetation cover or less) |
+| Forest | 25–48 and 125–148 (terra-firma + wetland forest) |
+| Grassland | 0–24 and 100–124 (short vegetation + wetland short vegetation, including bare ground) |
+| Cropland | 244 |
+| Built-up | 250 |
+| Water | 200–207 |
+| Snow/ice | 241 |
+| Ocean | 254 |
+
+This collapses the nine categories used in earlier iterations. Terra-firma and wetland forest are merged into a single **Forest** class, and wetland short vegetation is merged into **Grassland**. Bare ground (value 0) is no longer a standalone category: it is folded into Grassland (per the code comment, "although the POC considers 0 as bareground, we include it as grassland here"). As a result, bare pixels carry grassland vegetation carbon and can act as emissive sources when converted. Finally, **Ocean** (254) is split out as a distinct class from inland **Water** (200–207).
 
 We compare consecutive GLAD GLCLUC epochs (2000→2005, 2005→2010, 2010→2015, 2015→2020), and for each pixel, record whether a transition occurred, from which land use category, and to which. We record all transitions, but the only transitions that generate LUC emissions are those where land cover changes from a higher-carbon state (e.g. forest, short vegetation/grassland) to a lower-carbon state (e.g. cropland, built-up). Transitions in the reverse direction (e.g., cropland → forest) would represent carbon removals, which are not currently included in this methodology (see Appendix 2).
 
@@ -73,7 +75,7 @@ All input layers are rasterized or resampled to the 30m Hansen Global Forest Cha
 
 ### Climate domain identification
 
-We use an independently recreated raster (Lewis, 2022) to determine the IPCC climate domain for each pixel. This dataset is built following the IPCC 2019 Refinement decision tree (Vol 4, Ch 3, Annex 3A.5), which classifies climate zones using mean annual temperature, precipitation, potential evapotranspiration ratio, frost days, and elevation. The raster is provided at 0.5° resolution (~50km), which is sufficient for climate domain classification. We use 10 of the 12 IPCC climate zones, excluding polar zones (negligible cropland). 
+We use an independently recreated raster (Lewis, 2022) to determine the IPCC climate domain for each pixel. This dataset is built following the IPCC 2019 Refinement decision tree (Vol 4, Ch 3, Annex 3A.5), which classifies climate zones using mean annual temperature, precipitation, potential evapotranspiration ratio, frost days, and elevation. The raster is provided at 0.5° resolution (~50km), which is sufficient for climate domain classification. We use 10 of the 12 IPCC climate zones, excluding polar zones (negligible cropland).
 
 We store the climate domain as a single categorical value per pixel (not a time series).
 
@@ -87,14 +89,14 @@ For each pixel with a detected land use transition, emissions are the sum of car
 
 1. Vegetation carbon, defined as:
    1. Above-ground biomass
-   2. Root biomass 
+   2. Root biomass
    3. Dead organic matter (forests only)
 2. Soil organic carbon
    1. Mineral soil stock change
    2. Peatland drainage
 
 
-For forests, we calculate 1.a-1.c separately. For grasslands and shrublands, we use a single overall value for vegetation. In both cases, soil organic carbon is a separate calculation, and is handled differently for mineral soils and peatland pixels. 
+For forests, we calculate 1.a-1.c separately. For grasslands and shrublands, we use a single overall value for vegetation. In both cases, soil organic carbon is a separate calculation, and is handled differently for mineral soils and peatland pixels.
 
 All categories of emissions are initially calculated as if the transition is instantaneous. Emissions are then subsequently allocated over time using the linear discounting approach described in the next section, following GHGP guidance.
 
@@ -106,10 +108,10 @@ Finally, we add in an additional ongoing (land management) component of peatland
 
 When a forest is converted to another land cover type, we calculate:
 
-- for forest → grassland conversions, loss of the difference in vegetation carbon between the forest and the grassland 
+- for forest → grassland conversions, loss of the difference in vegetation carbon between the forest and the grassland
 - for forest → cropland or built-up land cover conversions, full loss of forest vegetation carbon
 
-Forest vegetation carbon is calculated as follows. Soil carbon losses from these transitions are handled separately in the next section.
+Forest vegetation carbon is calculated as follows.
 
 ##### Above ground live biomass
 
@@ -125,7 +127,7 @@ Below-ground biomass for forests comes from Huang et al. (2021) at ~1km resoluti
 
 ##### Dead organic matter
 
-Dead organic matter (dead wood + litter) is estimated as a fraction of above-ground biomass, following the UNFCCC CDM AR-TOOL-12 methodology. 
+Dead organic matter (dead wood + litter) is estimated as a fraction of above-ground biomass, following the UNFCCC CDM AR-TOOL-12 methodology.
 
 ```
 DOM_C = above_ground_biomass × (dead_wood_factor × 0.50 + litter_factor × 0.37)
@@ -142,7 +144,7 @@ Where AGB is calculated as described in the previous section, 0.50 (dead wood, t
 | Tropical, >2000m (montane) | 0.07 | 0.01 |
 | Temperate / Boreal | 0.08 | 0.04 |
 
-For CONUS, nearly all forest pixels fall in the temperate/boreal row (dead wood = 8% of AGB, litter = 4%). For a typical US temperate forest with AGB = 150 Mg/ha, this yields DOM carbon of ~8.2 tC/ha (dead wood 6.0 + litter 2.2). 
+For CONUS, nearly all forest pixels fall in the temperate/boreal row (dead wood = 8% of AGB, litter = 4%). For a typical US temperate forest with AGB = 150 Mg/ha, this yields DOM carbon of ~8.2 tC/ha (dead wood 6.0 + litter 2.2).
 
 *References:*
 - CDM AR-TOOL-12 v3.0: Estimation of carbon stocks and change in carbon stocks in dead wood and litter in A/R CDM project activities. UNFCCC.
@@ -153,18 +155,18 @@ For CONUS, nearly all forest pixels fall in the temperate/boreal row (dead wood 
 
 For grassland and shrubland, we assign a single total vegetation carbon density, which represents above ground biomass + below ground biomass. Values are adapted from the BLUE model (Hansis et al. 2015, supplementary Table S1), used in IPCC assessments and the Global Carbon Budget. We remap BLUE's PFT-level carbon densities to IPCC climate domains; the assignments for tropical dry, tropical montane, warm/cool temperate dry, and boreal moist climate zones represent our interpretation where the source provides no direct equivalent.
 
-| IPCC climate domain      | Total vegetation C (tC/ha) | 
-| ------------------------ | -------------------------- | 
-| Tropical, Wet            | 18                         | 
-| Tropical, Moist          | 18                         | 
-| Tropical, Dry            | 7                          | 
-| Tropical, Montane        | 7                          | 
-| Warm Temperate, Moist    | 7                          | 
+| IPCC climate domain      | Total vegetation C (tC/ha) |
+| ------------------------ | -------------------------- |
+| Tropical, Wet            | 18                         |
+| Tropical, Moist          | 18                         |
+| Tropical, Dry            | 7                          |
+| Tropical, Montane        | 7                          |
+| Warm Temperate, Moist    | 7                          |
 | Warm Temperate, Dry      | 5                          |
-| Cool Temperate, Moist    | 7                          | 
+| Cool Temperate, Moist    | 7                          |
 | Cool Temperate, Dry      | 5                          |
-| Boreal, Moist            | 6                          | 
-| Boreal, Dry              | 3                          | 
+| Boreal, Moist            | 6                          |
+| Boreal, Dry              | 3                          |
 
 For the majority of CONUS short vegetation conversions (Great Plains grassland in the warm/cool temperate zones), these values are at the high end of total vegetation carbon estimated from field-measured above-ground biomass and standard root-to-shoot ratios (Mokany et al., 2006; IPCC 2006 Vol 4, Table 6.1), providing slight conservatism for short/mixed grass prairie. However they underestimate vegetation carbon slightly for tallgrass prairie and significantly for western shrublands like California chaparral. Literature values for comparison:
 
@@ -203,7 +205,7 @@ _References:_
 
 We calculate soil organic carbon (SOC) losses for non-peatland pixels using the IPCC stock change approach (IPCC 2019, Vol 4, Ch 5, Tables 5.5 and 5.10). This follows the IPCC approach of treating mineral and organic soils separately. See IPCC 2006 Vol 4, Ch 5, Section 5.2.3.2.
 
-SoilGrids SOC stock is available in GEE at `projects/soilgrids-isric/ocs_mean` (0–30cm stock, units t/ha). Where SoilGrids has NoData (masked pixels), we use the IPCC default reference SOC stock for warm temperate moist mineral soil (low activity clay): 63 tC/ha (IPCC 2019 Refinement, Vol 4, Table 2.3). This affects <1% of conversion pixels.
+SoilGrids 0–30cm SOC stock (units t/ha) is ingested as a source dataset and resampled to the common grid. Masked / NoData SoilGrids pixels are handled by the pipeline's standard no-data unification.
 
 For each pixel with a land use transition, we compute the SOC change as `SOC_stock × (1 - F_LU)`, where `F_LU` is the IPCC Tier 1 land-use stock change factor for the destination land use under the pixel's climate domain. We convert to tCO2 by multiplying by pixel area in hectares and the CO2/C mol ratio (44/12).
 
@@ -223,10 +225,10 @@ We set input and management factors to 1 (nominal input, full tillage) per IPCC 
 
 Peatland pixels are the most complex and novel component of the methodology. We use a two-part model that captures (1) a declining emission pulse over the first 20 years post-drainage, and (2) a flat steady-state emission rate thereafter.  The initial pulse is modeled as land use change under the GHGP framework, with GHGP's standard linear discounting providing the decline curve. The flat steady state emissions are modeled as annual land management emissions. Both values are calibrated based on the IPCC 2013 Wetlands Supplement Tier 1 emission factors and the scientific literature on rate of peatland emissions decay:
 
-- Land use change = 621 t CO₂ ha⁻¹ 
-- Land management = 37.3 t CO₂-eq ha⁻¹ yr⁻¹ 
+- Land use change = 621 t CO₂ ha⁻¹
+- Land management = 37.3 t CO₂-eq ha⁻¹ yr⁻¹
 
-The detailed model structure and derivation of these values is described in the [supplement](peatland_methodology_supplement.md). 
+The detailed model structure and derivation of these values is described in the [supplement](peatland_methodology_supplement.md).
 
 ## Allocating emissions to crop years
 
@@ -249,7 +251,7 @@ The GHGP-prescribed linear discounting weights are calculated as:
 weight(year) = 10.25% - 0.5% × years_since_conversion
 ```
 
-Where `years_since_conversion = reporting_year - conversion_year + 1 (ranging from 1 to 20)`. Since our transition data only exists at GLAD epoch boundaries, we aggregate these 20 per-year weights into 4 epoch weights by averaging across the conversion years each epoch covers.
+Where `years_since_conversion = reporting_year - conversion_year + 1 (ranging from 1 to 20)`. Since our transition data only exists at GLAD epoch boundaries, we aggregate these 20 per-year weights into 4 epoch weights, one per transition.
 
 Each GLAD GLC map represents land cover at approximately the labeled year. A transition detected between consecutive maps therefore is predicted by the model to have occurred in one of the 5 years following the earlier map. We treat those 5 candidate conversion years as equally likely and use the unbiased estimator: the arithmetic mean of the 5 corresponding GHGP per-year weights. For the 2020 reporting year this gives:
 
@@ -260,7 +262,7 @@ Each GLAD GLC map represents land cover at approximately the labeled year. A tra
 | 2010→2015  | 2011–2015        | 8                | 6.25%  |
 | 2015→2020  | 2016–2020        | 3                | 8.75%  |
 
-Note that these weights are *not* the GHGP weight evaluated at the continuous midpoint of each interval (e.g., 2017.5 for 2015→2020, which would give 8.50% rather than 8.75%). Because the GHGP weight schedule is defined on discrete integer years rather than as a continuous function of time, the unbiased per-year average is offset by 0.5 years from the continuous midpoint. For any individual pixel, the maximum residual timing error is ±2 years, corresponding to ±1 percentage point on the weight — negligible relative to the overall uncertainty of the model.
+Note that these weights are *not* the GHGP weight evaluated at the continuous midpoint of each interval (e.g., 2017.5 for 2015→2020, which would give 8.50% rather than 8.75%): because the GHGP schedule is defined on discrete integer years, the unbiased per-year average is offset by 0.5 years from the continuous midpoint. The difference is negligible relative to the overall uncertainty of the model.
 
 ## Allocating emissions to crops
 
@@ -271,13 +273,13 @@ For each 30m pixel classified as cropland by GLAD GLC 2020 and as a row crop by 
 3. Apply the state-level average yield rate (kg/ha)
 4. Multiply by pixel area in hectares
 
-The CDL crop layer for 2020 is available on GEE at `USDA/NASS/CDL/2020`.
+CDL is ingested as a source dataset (`jdluc/datasets/usda_nass_cdl.py`); crop codes are resolved via the `CropClass` enum (corn = 1, soybeans = 5, wheat = 22/23/24). The GLAD-cropland filter — restricting CDL pixels to those where `land-class:2020 == CROPLAND` — is an explicit, toggleable step (`attribution.skip_glad_crop_filter`).
 
 Because we apply crop yields only for those CDL pixels also identified as cropland by GLAD GLC 2020, we lose ~9% of total US production; however, since the excluded pixels are absent from both the emissions numerator and the production denominator, they should not significantly affect our final emissions factors on average. See Appendix 1 for details.
 
 ### Calculate crop yields
 
-We use state-level USDA yield statistics to estimate 2020 crop production per pixel.  We use the USDA National Agricultural Statistics Service (NASS) QuickStats crops dataset, available at https://www.nass.usda.gov/datasets/, filtering for:
+We use state-level USDA yield statistics to estimate 2020 crop production per pixel. Yields are pulled live from the USDA National Agricultural Statistics Service (NASS) QuickStats API and ingested as a `TabularDataset` (`jdluc/datasets/usda_nass_quickstats.py`, requires an API key), filtering for:
 
 - `STATISTICCAT_DESC = 'YIELD'`
 - `AGG_LEVEL_DESC = 'STATE'`
@@ -307,7 +309,7 @@ Where `HA_PER_ACRE = 0.40468564`.
 
 For each (state, crop) combination, we compute the average emissions factor as:
 ```
-EF[state, crop] = Σ(allocated_emissions[pixel]) / Σ(yield_kg_per_ha × pixel_area_ha) 
+EF[state, crop] = Σ(allocated_emissions[pixel]) / Σ(yield_kg_per_ha × pixel_area_ha)
 ```
 Where the sum runs over all 30m pixels classified as that crop by CDL 2020 and as cropland by GLAD GLC 2020 within the state. The numerator uses the 2020-allocated emissions from the previous section (linearly discounted LUC plus peatland land management). The denominator is total state production for that crop calculated as the per-ha yield x pixel area for the same pixel set.
 
@@ -315,14 +317,14 @@ National emissions factors are computed analogously by summing across CONUS.
 
 ## Final outputs
 
-The pipeline produces two tables. Full schemas live in `pipeline_tech_design.md`.
+The pipeline produces two main artifacts:
 
-- **`transitions`** — one row per (county, epoch_transition, emissions_type). Gives the area converted under each emissive transition (forest→cropland, short-veg→built-up, etc.), the gross emissions from that transition, and the 20-year linearly discounted allocation to 2020. Rolls up to per-state and CONUS totals, and to per-source-family or per-epoch summaries.
-- **`crops`** — one row per (county, crop_group). Gives the per-crop emissions factor in kgCO2e per kg of crop, 2020 production and area, and the breakdown of allocated emissions by source family (forest, short-veg, peatland conversion, peatland occupation) and epoch.
+- **Per-pixel emissions (zarr)** — written by `emissions.workflow`. Variables include the per-year land classes (`land-class:{year}`); the carbon-stock layers `aboveground-carbon`, `belowground-carbon`, `dead-organic-matter-carbon`, and `grassland-carbon` (all in `:tcarbon-per-ha`); `vegetation-carbon:{year}`; the per-epoch fluxes `vegetation-emissions:{b}-{a}`, `soil-emissions:{b}-{a}`, and `emissions:{b}-{a}`; `peatland-occupation`; `emissions-per-hectare`; `hectares-per-pixel`; and total `emissions`. Variable names carry unit suffixes (e.g. `emissions-per-hectare:tco2e-per-ha`).
+- **Per-(admin level, crop, jurisdiction) emissions-factor table** — produced by `emissions_factors.workflow`. Columns: `crop_hectares`, `peatland_crop_hectares`, `peatland_occupation_emissions`, `total_emissions`, `total_production_kg`, `emissions_factor_kgco2e_per_kg`, and `peatland_occupation_fraction`.
 
 ## Appendix 1: GLAD GLC vs CDL row crop comparison
 
-As described above, the methodology calculates emissions for pixels identified by GLC as cropland, using CDL to allocate among crops. This means that any CDL pixels not identified as cropland by GLAD GLC 2020 are excluded from both emissions and production. 
+As described above, the methodology calculates emissions for pixels identified by GLC as cropland, using CDL to allocate among crops. This means that any CDL pixels not identified as cropland by GLAD GLC 2020 are excluded from both emissions and production.
 
 To test whether this exclusion likely biases our EFs, we computed confusion matrices crossing CDL row crop classification against GLAD GLC cropland (pixel value 244) for all 48 CONUS states + DC, comparing CDL 2020 × GLAD GLC 2020.
 
@@ -332,7 +334,7 @@ To test whether this exclusion likely biases our EFs, we computed confusion matr
 | **CDL not row crop** | 37,238,049 ha | 631,957,357 ha | 669,195,406 ha |
 | **Total** | 136,713,915 ha | 642,205,412 ha | 778,919,327 ha |
 
-90.7% of CDL row crop pixels are also identified as crops by GLAD. 
+90.7% of CDL row crop pixels are also identified as crops by GLAD.
 
 The 9.3% of "lost" CDL row crops are concentrated in regions with smaller, more fragmented fields:
 
@@ -365,7 +367,7 @@ These pixels fall into two cases, which we analyzed for 10 key agricultural stat
 | Wetland | 66,092 | 1% | Would generate forest or grassland emissions. |
 | Water/bare/other | 8,429 | <1% | Negligible |
 
-Because lost pixels are excluded from both the emissions numerator and the production denominator, what matters for EF accuracy is whether they are systematically different from the in-scope population. If so, it appears that it's in a way that biases the EF slightly upward rather than downward: only ~3% of lost pixels have a GLC history showing conversion from a non-crop source, compared with the ~6.5% conversion-from-non-crop rate observed among the in-scope CDL row crop population. The dropped pixels are, if anything, biased toward stable, non-converting land. 
+Because lost pixels are excluded from both the emissions numerator and the production denominator, what matters for EF accuracy is whether they are systematically different from the in-scope population. If so, it appears that it's in a way that biases the EF slightly upward rather than downward: only ~3% of lost pixels have a GLC history showing conversion from a non-crop source, compared with the ~6.5% conversion-from-non-crop rate observed among the in-scope CDL row crop population. The dropped pixels are, if anything, biased toward stable, non-converting land.
 
 See `analyses/cdl_glad_glc_comparison.ipynb` for the full analysis.
 
@@ -375,7 +377,7 @@ This methodology is a first draft. We see a number of areas where further resear
 
 ### GLAD GLC vs Hansen TCL forest-detection globally
 
-Although forest conversion emissions are very small in the US, they will become the dominant source of emissions as we expand globally. Our preliminary analysis (offline, not yet published in this repo) shows significant differences in the US in forest detections between the GLAD GLC layer we are using and the widely used Global Forest Watch tree cover loss dataset designed specifically for this purpose. There are few enough conversion events in the US that these disagreements could be noise. But knowing we want to extend globally over time, and with our land cover layer as the single most important methodology choice, we should do more investigation of this issue early. 
+Although forest conversion emissions are very small in the US, they will become the dominant source of emissions as we expand globally. Our preliminary analysis (offline, not yet published in this repo) shows significant differences in the US in forest detections between the GLAD GLC layer we are using and the widely used Global Forest Watch tree cover loss dataset designed specifically for this purpose. There are few enough conversion events in the US that these disagreements could be noise. But knowing we want to extend globally over time, and with our land cover layer as the single most important methodology choice, we should do more investigation of this issue early.
 
 **Potential impact:** Minimal for US row-crop EFs; potentially substantial in other geographies.
 
@@ -396,7 +398,7 @@ Although forest conversion emissions are very small in the US, they will become 
 
 ### Peatland dataset choice
 
-**Issue**: We use the GFW Global Peatlands raster composite. For CONUS, GFW uses Xu PEATMAP above 40°N; below 40°N it falls back to Gumbricht et al. (2017), a tropical-tuned hydrological model. This cutoff may be in the wrong spot for the temperate US — it affects Delaware, the mid-Atlantic, the Southeast, southern California, Arizona, New Mexico, and most of Texas. 
+**Issue**: We use the GFW Global Peatlands raster composite. For CONUS, GFW uses Xu PEATMAP above 40°N; below 40°N it falls back to Gumbricht et al. (2017), a tropical-tuned hydrological model. This cutoff may be in the wrong spot for the temperate US — it affects Delaware, the mid-Atlantic, the Southeast, southern California, Arizona, New Mexico, and most of Texas.
 
 **Potential impact:**  National-level impact is likely modest because the Corn Belt sits above 40°N where Xu is the active source anyway; the issue concentrates in Southeast and mid-Atlantic states.
 
@@ -406,7 +408,7 @@ Although forest conversion emissions are very small in the US, they will become 
 
 **Issue:** GLAD GLC's "short vegetation" category (values 1–24) encodes only vegetation cover fraction (~7% to 100% cover), not vegetation type (Potapov et al., 2022). It does not distinguish grassland from shrubland. In the face of this limitation, the current methodology uses simple climate-zone-stratified carbon stock from the Houghton/BLUE bookkeeping parameterization for these pixels. The Houghton/BLUE values seem reasonably well-calibrated for herbaceous grassland (the dominant short vegetation type in US cropland conversion areas), but undercount AGB for woody shrubland: sagebrush steppe has 3–4 tC/ha (Fusco et al., 2019), and mature California chaparral has 17–28 tC/ha (Bohlman et al., 2018). Because most US short vegetation → cropland conversion occurs on Great Plains grassland rather than shrubland, the impact on national-level emission factors is likely small, but the undercount could be material for state-level factors in shrubland-heavy states, and when the methodology is extended globally.
 
-**Potential impact:** Grassland conversion is the dominant driver of emissions for row crops in the United States. Even if shrubland is only 10-20% of the "short vegetation" conversions, the underestimate on those pixels could be large enough to matter. 
+**Potential impact:** Grassland conversion is the dominant driver of emissions for row crops in the United States. Even if shrubland is only 10-20% of the "short vegetation" conversions, the underestimate on those pixels could be large enough to matter.
 
 **Potential improvement path**: Two approaches, in increasing order of sophistication: (1) Overlay an auxiliary classification that distinguishes shrubland from grassland (e.g., ESA WorldCover at 10m or NLCD Shrub/Scrub class) and apply differentiated literature-based carbon densities (~6–12 tC/ha for sagebrush, ~17–28 tC/ha for chaparral, vs. the current 5–7 tC/ha for all short vegetation). (2) Replace the static lookup table entirely with satellite-derived, spatially explicit AGB estimates for non-forest vegetation, using a product like IB-AGC (Li et al., 2025) at 25km resolution, subtracting known forest and crop biomass contributions, and distributing the residual across 30m grassland/shrubland pixels as a continuous function of woody fractional cover from the Copernicus Global Land Service.
 
@@ -418,7 +420,7 @@ Although forest conversion emissions are very small in the US, they will become 
 
 ### Missing carbon sequestration
 
-**Issue**: The methodology tracks only emissions from land use change, not carbon removals when cropland reverts to forest or grassland. This is consistent with the GHGP LSRS's approach, but it would be helpful to have carbon sequestration values available for comparing to national inventories or potentially for use of the dataset in LMU-level analyses. 
+**Issue**: The methodology tracks only emissions from land use change, not carbon removals when cropland reverts to forest or grassland. This is consistent with the GHGP LSRS's approach, but it would be helpful to have carbon sequestration values available for comparing to national inventories or potentially for use of the dataset in LMU-level analyses.
 
 **Potential impact:** The US has had significant cropland→forest reversion (e.g. CRP enrollment, eastern reforestation). This is likely significant in any circumstance where GHGP allows these emissions to be counted.
 
@@ -426,19 +428,19 @@ Although forest conversion emissions are very small in the US, they will become 
 
 **Issue**: The CDM AR-TOOL-12 DOM factors for tropical forests appear to be an underestimate relative to US FIA field measurements, which show a national average of ~20 tC/ha total DOM (~10 tC/ha dead wood + ~10 tC/ha litter; Domke et al., 2016; Woodall et al., 2008) -- ~2.4x the 8.2 tC/ha typical value we calculated above. We've chosen to stick with the well-standardized and peer reviewed CDM AR-TOOL-12 approach for now, but it would be good to investigate and understand this difference.  One early hypothesis is a definitional  difference: FIA "forest floor" may include duff/humus (partially decomposed organic material above mineral soil), that is classified as soil rather than litter in the CDM/IPCC framework. Another factor could be that the 8.2 tC/ha "typical" value quoted above is below the area-weighted US average, which could be pulled up by outliers.
 
-**Potential impact:** The ~2.4x gap between CDM AR-TOOL-12 (~8.2 tC/ha) and FIA measurements (~20 tC/ha) translates to ~43 tCO2/ha missing per forest pixel. That's roughly 8-12% of typical per-pixel forest conversion emissions. If forest conversion emissions are only 10% of total row crop emissions, that's ~1% of total emissions. But the gap may be partly definitional (FIA "forest floor" includes duff/humus classified as soil under IPCC), so the real impact could be considerably smaller. Worth investigating but uncertain.
+**Potential impact:** The ~2.4x gap between CDM AR-TOOL-12 (~8.2 tC/ha) and FIA measurements (~20 tC/ha) translates to ~43 tCO2/ha missing per forest pixel. That's roughly 8-12% of typical per-pixel forest conversion emissions. If forest conversion emissions are only 10% of total row crop emissions, that's ~1% of total emissions. But the gap may be partly definitional (see above), so the real impact could be considerably smaller. Worth investigating but uncertain.
 
 ### Harris above ground forest biomass: static year-2000 values
 
-**Issue**: Harris et al. (2021) provides circa year-2000 biomass. For forest loss events in later years, actual biomass may differ due to growth or partial disturbance. 
+**Issue**: Harris et al. (2021) provides circa year-2000 biomass. For forest loss events in later years, actual biomass may differ due to growth or partial disturbance.
 
-**Potential impact:** Although grassland conversion is the dominant driver of U.S. row crop-driven emissions, forest conversion dominates per-hectare emissions where conversion events do occur. And although for US temperate forests 20 years of growth is a relatively small fraction of total standing biomass, the most recent transitions (2015-2020) get the highest allocation weights (8.75%) while also potentially having the largest AGB underestimate (potentially 15-30% growth over 15-20 years). Thus we could be underestimating total forest conversion emissions by 10-20% for recently cleared areas. 
+**Potential impact:** Although grassland conversion is the dominant driver of U.S. row crop-driven emissions, forest conversion dominates per-hectare emissions where conversion events do occur. And although for US temperate forests 20 years of growth is a relatively small fraction of total standing biomass, the most recent transitions (2015-2020) get the highest allocation weights (8.75%) while also potentially having the largest AGB underestimate (potentially 15-30% growth over 15-20 years). Thus we could be underestimating total forest conversion emissions by 10-20% for recently cleared areas.
 
 ### GLAD GLC forest definition vs. Accountability Framework 10% canopy threshold
 
 **Issue**: The Accountability Framework / SBTi FLAG guidance provides specific rules on what degree of forest cover should be treated as forest. GLAD GLC defines forest by canopy height (values 25–48 = 3m to >25m trees). These definitions may not be perfectly equivalent. The task is to verify alignment and assess any differences in forest extent. Combined with the issues above, this might also push us to take a less categorical approach to estimation of above ground carbon stocks. The physical reality is that forest -> shrubland -> grassland is more a continuum than a set of discrete categories.
 
-**Potential impact:** This shifts pixels between the forest category (high per-hectare emissions) and the short vegetation category (lower per-hectare emissions). The magnitude depends on how much area lies at the boundary between the two definitions. In US temperate forests, the 3m canopy height threshold probably captures most of what a 10% canopy cover threshold would — the ambiguous zone is likely sparse woodland and savanna edges. Maybe a few percent impact on total emissions, concentrated in transition zones. 
+**Potential impact:** This shifts pixels between the forest category (high per-hectare emissions) and the short vegetation category (lower per-hectare emissions). The magnitude depends on how much area lies at the boundary between the two definitions. In US temperate forests, the 3m canopy height threshold probably captures most of what a 10% canopy cover threshold would — the ambiguous zone is likely sparse woodland and savanna edges. Maybe a few percent impact on total emissions, concentrated in transition zones.
 
 ### GLAD GLC built-up classification is over-inclusive vs. NLCD
 
@@ -460,4 +462,3 @@ Although forest conversion emissions are very small in the US, they will become 
 - Potapov, P., Hansen, M.C., Pickens, A. et al. (2022). The Global 2000–2020 Land Cover and Land Use Change Dataset Derived From the Landsat Archive: First Results. Frontiers in Remote Sensing 3, 856903. https://doi.org/10.3389/frsen.2022.856903
 - Sanderman, J., Hengl, T. & Fiske, G.J. (2017). Soil carbon debt of 12,000 years of human land use. Proceedings of the National Academy of Sciences 114(36), 9575–9580. https://doi.org/10.1073/pnas.1706103114
 - Spawn, S.A., Lark, T.J. & Gibbs, H.K. (2019). Carbon emissions from cropland expansion in the United States. Environmental Research Letters 14, 045009. https://doi.org/10.1088/1748-9326/ab0399
-

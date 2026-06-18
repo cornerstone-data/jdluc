@@ -16,17 +16,20 @@ The methodology and technical decisions in this repo are intended as a starting 
 
 ## Data access
 
-Emissions factors and summary statistics:
+Harmonized datasets and emissions layers:
 
-```shell
-curl -O https://storage.googleapis.com/cornerstone-luc/cornerstone-data/jdluc/conus/tables/crops.csv
-curl -O https://storage.googleapis.com/cornerstone-luc/cornerstone-data/jdluc/conus/tables/transitions.csv
+```python
+>>> import xarray
+>>> harmonized = xarray.open_zarr("gs://cornerstone-luc/cornerstone-data/jdluc/conus-v2/harmonize.zarr", consolidated=False)
+>>> emissions = xarray.open_zarr("gs://cornerstone-luc/cornerstone-data/jdluc/conus-v2/emissions.zarr", consolidated=False)
 ```
 
-Simple raster visualizations:
+Emissions factors:
 
-- [Land use transitions, crop, and peat masks](https://cornerstone-data.projects.earthengine.app/view/jdluc-landuse-conus-20260513) 
-- [Pixel-level emissions estimates](https://cornerstone-data.projects.earthengine.app/view/jdluc-emissions-conus-20260513)
+```python
+>>> import pandas
+>>> emission_factors = pandas.read_parquet("gs://cornerstone-luc/cornerstone-data/jdluc/conus-v2/emissions-factors.parquet")
+```
 
 The data is licensed [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). Please follow the latest attribution guidance in ATTRIBUTION.md.
 
@@ -41,55 +44,44 @@ Once you're ready to look under the hood:
 
 ### Getting set up
 
-You'll need access to a GCP project with the Earth Engine and BigQuery APIs enabled. You'll also need [uv](https://docs.astral.sh/uv/getting-started/installation/) installed as the Python env manager.
+You'll need [uv](https://docs.astral.sh/uv/getting-started/installation/) installed as the Python env manager, plus a GCP project with GCS access and a USDA NASS QuickStats API key.
 
 ```bash
-# Set GCP_PROJECT to your GCP project ID (the same value you set in
-# jdluc/utils/constants.py).
-export GCP_PROJECT=cornerstone-data
+# Copy the example env file and fill in your values.
+cp .env.example .env
+# Set INGEST_BUCKET_NAME, GCP_PROJECT, SCRATCH_BUCKET_NAME, and USDA_NASS_API_KEY in .env.
 
 # Sync Python dependencies into the project venv.
 uv sync
 
-# Authenticate gcloud application-default credentials.
+# Authenticate gcloud application-default credentials (for GCS access).
 gcloud auth application-default login --project "${GCP_PROJECT}"
-
-# Authenticate Earth Engine and point it at the same project.
-uv run earthengine authenticate
-uv run earthengine set_project "${GCP_PROJECT}"
 ```
+
+Obtain a NASS QuickStats API key at https://quickstats.nass.usda.gov/api and set it as `USDA_NASS_API_KEY` in `.env`.
 
 ### Running the pipeline
 
-First, set GCP project info by editing the deployment configuration block at the top of `jdluc/utils/constants.py`.
-
-Second, create the project folder in Google Earth Engine:
-
-```shell
-uv run earthengine --project=${GCP_PROJECT} create folder projects/${GCP_PROJECT}/assets/cornerstone-luc
-```
-
-Finally:
+The pipeline runs as a sequence of per-stage entry points, parameterized by a tile set (`DELAWARE`, `CONUS`, `BAY_AREA`, `GFW`, or `WHOLE_WORLD`):
 
 ```bash
-# Default: Delaware (single state, smallest test region)
-uv run python jdluc/cli.py -v
+# 1. Ingest each source dataset (positional args; --concurrency / --overwrite optional).
+uv run python -m jdluc.ingest <TILE_SET> <DATASET>
 
-# Multi-state (Iowa + Nebraska + South Dakota)
-uv run python jdluc/cli.py --region great_plains_test -v
+# 2. Harmonize ingested tiles onto the common grid.
+uv run python jdluc/harmonize.py <TILE_SET>
 
-# Full CONUS (longer — full 48 states + DC)
-uv run python jdluc/cli.py --region conus -v
+# 3. Compute per-pixel land-conversion emissions (writes zarr).
+uv run python jdluc/emissions.py <TILE_SET>
 
-# Force re-export even when an asset already exists at the target version
-uv run python jdluc/cli.py --force -v
+# 4. Build the emissions-factor table (Delaware example; --skip-glad-crop-filter optional).
+uv run python jdluc/emissions_factors.py --admin-id USA008
 ```
 
 ### Tests
 
 ```bash
-uv run pytest jdluc -m "not integration"   # unit tests; offline
-uv run pytest jdluc -m integration         # GEE / BQ integration
+uv run pytest jdluc
 ```
 
 ### Linting
