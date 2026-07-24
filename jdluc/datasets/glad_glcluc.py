@@ -25,7 +25,6 @@ import os
 import tempfile
 
 import rasterio
-import rasterio.enums
 
 from jdluc import tiling, utils
 from jdluc.datasets import base
@@ -54,7 +53,7 @@ def _save_tile_id_to_local_path(local_path: str, tile_id: str) -> None:
         profile.update(count=len(year_to_geotiff))
         logger.info(f"Combining {YEARS=:} into separate bands for one GeoTIFF")
         with rasterio.open(fp=local_path, mode="w", **profile) as dataset:
-            for idx, (year, year_path) in enumerate(
+            for idx, (_, year_path) in enumerate(
                 sorted(year_to_geotiff.items()), start=1
             ):
                 with rasterio.open(fp=year_path) as source:
@@ -63,17 +62,17 @@ def _save_tile_id_to_local_path(local_path: str, tile_id: str) -> None:
 
 DATASET = base.RasterDataset(
     band_names=BAND_NAMES,
+    band_type=base.BandType.CATEGORICAL,
     no_data=(1 << 8) - 1,
     partitioning=tiling.Partitioning.TEN_DEGREE_TILE,
     product_name="glcluc",
-    resampling=rasterio.enums.Resampling.nearest,
     save_tile_id_to_local_path=_save_tile_id_to_local_path,
     source_name="glad",
     version="v0",
 )
 
 
-class LandClass(enum.Enum):
+class LandClass(enum.IntEnum):
     BUILT_UP = enum.auto()
     CROPLAND = enum.auto()
     FOREST = enum.auto()
@@ -93,7 +92,7 @@ LAND_CLASS_TO_VALUES: dict[LandClass, list[int]] = {
     LandClass.CROPLAND: [244],
     LandClass.FOREST: (flatten_ranges(range(25, 49), range(125, 149))),
     # NB: although the POC considers 0 as bareground, we include it as grassland here
-    LandClass.GRASSLAND: (flatten_ranges(range(0, 25), range(100, 125))),
+    LandClass.GRASSLAND: (flatten_ranges(range(25), range(100, 125))),
     LandClass.OCEAN: [254],
     LandClass.SNOW_ICE: [241],
     LandClass.WATER: flatten_ranges(range(200, 208)),

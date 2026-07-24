@@ -8,6 +8,7 @@ https://datacatalog.worldbank.org/search/dataset/0038272/world-bank-official-bou
 """
 
 import collections.abc
+import dataclasses
 import enum
 import functools
 import logging
@@ -15,13 +16,13 @@ import logging
 import geopandas
 import shapely
 
-from jdluc import config, gcs, tiling, utils
+from jdluc import config, storage, tiling, utils
 from jdluc.datasets import base
 
 logger = logging.getLogger(__name__)
 
 
-class AdminLevel(enum.Enum):
+class AdminLevel(enum.IntEnum):
     NATIONAL = 0
     PROVINCIAL = 1
     DISTRICT = 2
@@ -88,21 +89,20 @@ ADMIN_LEVEL_TO_DATASET = {
 assert set(AdminLevel) == set(ADMIN_LEVEL_TO_DATASET)
 
 
-def get_ten_degree_tile_ids_for_admin_id(admin_id: str, admin_level: int) -> list[str]:
+@functools.cache
+def load_geodataframe_for_admin_level(admin_level: int) -> geopandas.GeoDataFrame:
     dataset = ADMIN_LEVEL_TO_DATASET[AdminLevel(admin_level)]
-    path_to_fgb = gcs.get_uri_from_bucket_name_prefix(
-        bucket_name=config.Config.from_dot_env().ingest_bucket_name,
-        prefix=dataset.get_gcs_prefix(tile_id="world"),
+    path_to_fgb = storage.join_uri(
+        root=config.Config.from_dot_env().ingest_root,
+        prefix=dataset.get_prefix(tile_id="world"),
     )
-    logger.info(
-        f"Loading {admin_level=:d}'s geometry for {admin_id=:s}'s from {path_to_fgb=:s}"
-    )
-    geometry = (
-        geopandas.read_file(filename=path_to_fgb)
-        .set_index(keys="id")
-        .loc[admin_id]
-        .geometry
-    )
+    logger.info(f"Loading {admin_level=:d} geometrys from {path_to_fgb=:s}")
+    return geopandas.read_file(filename=path_to_fgb).set_index(keys="id")
+
+
+def get_ten_degree_tile_ids_for_admin_id(admin_id: str, admin_level: int) -> list[str]:
+    gdf = load_geodataframe_for_admin_level(admin_level=admin_level)
+    geometry = gdf.loc[admin_id].geometry
     assert isinstance(geometry, shapely.Polygon | shapely.MultiPolygon)
     return sorted(tiling.iter_ten_degree_tile_id_for_geometry(geometry=geometry))
 
@@ -114,17 +114,30 @@ def get_jurisdiction_for_admin_level(
     logger.info(f"Loading geometry for {admin_level.name=:s}")
     dataset = ADMIN_LEVEL_TO_DATASET[admin_level]
     return geopandas.read_file(
-        filename=gcs.get_uri_from_bucket_name_prefix(
-            bucket_name=config.Config.from_dot_env().ingest_bucket_name,
-            prefix=dataset.get_gcs_prefix(tile_id="world"),
+        filename=storage.join_uri(
+            root=config.Config.from_dot_env().ingest_root,
+            prefix=dataset.get_prefix(tile_id="world"),
         )
     ).set_index("id")
 
 
-def iter_province_for_iso_a3(
-    iso_a3: str,
-) -> collections.abc.Generator[tuple[str, str, shapely.Geometry]]:
-    provincial = get_jurisdiction_for_admin_level(admin_level=AdminLevel.PROVINCIAL)
+@dataclasses.dataclass
+class Jurisdiction:
+    level: AdminLevel
+    id: str
+    name: str
+    geometry: shapely.Geometry
+
+
+def iter_jurisdiction_for_iso_3166(
+    admin_level: AdminLevel, iso_3166: str
+) -> collections.abc.Generator[Jurisdiction]:
+    provincial = get_jurisdiction_for_admin_level(admin_level=admin_level)
     for admin_id, row in sorted(provincial.iterrows()):
-        if str(admin_id).startswith(iso_a3):
-            yield str(admin_id), row["name"], row["geometry"]
+        if str(admin_id).startswith(iso_3166):
+            yield Jurisdiction(
+                level=admin_level,
+                id=str(admin_id),
+                name=row["name"],
+                geometry=row["geometry"],
+            )

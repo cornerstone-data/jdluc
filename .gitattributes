@@ -1,5 +1,5 @@
 # Exclude Jupyter notebooks from GitHub's language statistics. The two
-# analysis notebooks under specs/analyses/ ship their rendered plots
+# analysis notebooks under analyses/ ship their rendered plots
 # inline (~840 KB total), which would otherwise dominate the language
 # bar even though almost all of the actual code in this repo is Python.
 *.ipynb linguist-detectable=false

@@ -1,7 +1,10 @@
 import numpy
 import pytest
+import shapely
+import xarray
 
 from jdluc.geo import (
+    clip_dset,
     get_chunk_size,
     get_overview_level,
 )
@@ -59,6 +62,33 @@ def test_get_chunk_size(
         get_chunk_size(
             dtypes=dtypes,
             number_of_dimensions=number_of_dimensions,
+            max_bytes_per_chunk=1 << 32,
         )
         == chunk_size
     )
+
+
+@pytest.mark.parametrize(
+    ("geometry", "expected"),
+    (
+        pytest.param(shapely.box(-5, -5, +5, +5), 9, id="much larger than dset"),
+        pytest.param(shapely.box(-1.5, -1.5, +1.5, +1.5), 9, id="matching bounds"),
+        pytest.param(shapely.box(-0.5, -0.5, +0.5, +0.5), 1, id="middle pixel"),
+        pytest.param(shapely.box(-1.5, -1.5, +0.5, +0.5), 4, id="lower-left quadrant"),
+        pytest.param(shapely.box(-1.5, -1.5, +0.5, +0.5), 4, id="lower-left quadrant"),
+        pytest.param(shapely.box(+1.5, +1.5, +2.5, +2.5), 0, id="touch at corner"),
+        pytest.param(shapely.box(+2.5, +2.5, +3.5, +3.5), 0, id="non-overlapping"),
+    ),
+)
+def test_clip_dset(geometry: shapely.Polygon, expected: int) -> None:
+    dset = (
+        xarray.DataArray(
+            coords={"y": [-1, 0, +1], "x": [-1, 0, +1]},
+            data=numpy.ones(shape=(3, 3), dtype=int),
+            dims=("y", "x"),
+        )
+        .rio.write_crs(4326)
+        .to_dataset(name="var")
+    )
+    result = clip_dset(dset=dset, geometry=geometry)
+    assert int(result["var"].count()) == expected

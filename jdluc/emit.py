@@ -1,24 +1,26 @@
 """Compute per-pixel land-conversion emissions from the harmonized dataset.
 
 Maps GLAD GLCLUC values to land classes, quantifies vegetation- and soil-carbon emissions
-across the 2000-2020 epoch transitions, adds ongoing peatland-occupation emissions, applies the
-GHGP 20-year linear discount, and scales to per-pixel tCO2e. Returns an xarray.Dataset (written
-to zarr), cached to GCS (`@gcs.cache`).
+across the 2000-2020 span transitions, adds ongoing peatland-occupation emissions, and applies
+the GHGP 20-year linear discount. Returns an xarray.Dataset — per-hectare emissions plus a
+hectares-per-pixel band for downstream area-scaling — which is cached.
 
 Example invocation:
-  uv run python jdluc/emissions.py DELAWARE
+  uv run python jdluc/emit.py NORTH_AMERICA
 """
 
 import argparse
+import functools
 import itertools
 import logging
 import math
+import operator
 import typing
 
 import numpy
 import xarray
 
-from jdluc import gcs, geo, harmonize, tiling
+from jdluc import continents, geo, harmonize, storage, tiling
 from jdluc.datasets import (
     gfw_global_peatlands,
     gfw_harris_agb,
@@ -32,13 +34,25 @@ logger = logging.getLogger(__name__)
 
 
 def get_land_class(glad_class: xarray.DataArray) -> xarray.DataArray:
-    # NB: Because the glad class values are disjoint, we can sum vegetation model carbon
-    # model enum values without worrying about collisions
-    ret = sum(
-        glad_class.isin(values) * numpy.uint8(land_class.value)
-        for land_class, values in glad_glcluc.LAND_CLASS_TO_VALUES.items()
-    )
-    return typing.cast(xarray.DataArray, ret).rename(None)
+    # NB: Because the glad class values are disjoint, each GLAD code maps to exactly
+    # one packed LandClass value, so we can resolve the whole remap with a 256-entry
+    # uint8 lookup table instead of one isin-scan per land class.
+    lookup = numpy.zeros(256, dtype=numpy.uint8)
+    for land_class, glad_values in glad_glcluc.LAND_CLASS_TO_VALUES.items():
+        lookup[list(glad_values)] = numpy.uint8(land_class.value)
+
+    def remap(block: numpy.ndarray) -> numpy.ndarray:
+        valid = numpy.isfinite(block) & (block >= 0) & (block < lookup.size)
+        ret = lookup[numpy.where(valid, block, 0).astype(numpy.intp)]
+        ret[~valid] = 0
+        return ret
+
+    return xarray.apply_ufunc(
+        remap,
+        glad_class,
+        dask="parallelized",
+        output_dtypes=[numpy.uint8],
+    ).rename(None)
 
 
 # IPCC 2006, Vol 4, Ch 4, §4.5 (living woody biomass).
@@ -120,12 +134,18 @@ assert set(ipcc_climate_zones.Zone) == set(CLIMATE_ZONE_TO_GRASSLAND_TCARBON_PER
 
 
 def get_grassland_carbon(climate_zones: xarray.DataArray) -> xarray.DataArray:
-    footprint = xarray.ones_like(climate_zones)
-    ret = sum(
-        tcarbon_per_ha * footprint.where(climate_zones == climate_zone.value, other=0)
-        for climate_zone, tcarbon_per_ha in CLIMATE_ZONE_TO_GRASSLAND_TCARBON_PER_HA.items()
-    )
-    return typing.cast(xarray.DataArray, ret).rename("tcarbon-per-ha")
+    lookup = numpy.zeros(256, dtype=numpy.float32)
+    for (
+        climate_zone,
+        tcarbon_per_ha,
+    ) in CLIMATE_ZONE_TO_GRASSLAND_TCARBON_PER_HA.items():
+        lookup[climate_zone.value] = tcarbon_per_ha
+    return xarray.apply_ufunc(
+        lookup.__getitem__,
+        climate_zones.fillna(0).astype(numpy.uint8),
+        dask="parallelized",
+        output_dtypes=[numpy.float32],
+    ).rename("tcarbon-per-ha")
 
 
 def get_vegetation_carbon(
@@ -175,13 +195,18 @@ def get_mineral_soil_emissions(
     climate_zones: xarray.DataArray,
     soil_organic_carbon: xarray.DataArray,
 ) -> xarray.DataArray:
-    ret = sum(
-        soil_organic_carbon.where(climate_zones == climate_zone.value, other=0)
-        * (1 - soc_loss_fraction)
-        * CO2E_PER_CARBON
-        for climate_zone, soc_loss_fraction in CLIMATE_ZONE_TO_SOC_LOSS_FRACTION.items()
-    )
-    return typing.cast(xarray.DataArray, ret).rename("tco2e-per-ha")
+    lookup = numpy.zeros(256, dtype=numpy.float32)
+    for climate_zone, soc_loss_fraction in CLIMATE_ZONE_TO_SOC_LOSS_FRACTION.items():
+        lookup[climate_zone.value] = (1 - soc_loss_fraction) * CO2E_PER_CARBON
+    return (
+        xarray.apply_ufunc(
+            lookup.__getitem__,
+            climate_zones.fillna(0).astype(numpy.uint8),
+            dask="parallelized",
+            output_dtypes=[numpy.float32],
+        )
+        * soil_organic_carbon
+    ).rename("tco2e-per-ha")
 
 
 PEATLAND_EMISSIONS_PULSE_TCO2E_PER_HA = 621
@@ -194,18 +219,10 @@ def get_soil_emissions(
     is_peatland: xarray.DataArray,
     soil_organic_carbon: xarray.DataArray,
 ) -> xarray.DataArray:
-    is_emissive = before.isin(
-        (
-            glad_glcluc.LandClass.FOREST.value,
-            glad_glcluc.LandClass.GRASSLAND.value,
-        )
-    ) & (
-        ~after.isin(
-            (
-                glad_glcluc.LandClass.FOREST.value,
-                glad_glcluc.LandClass.GRASSLAND.value,
-            )
-        )
+    FOREST = glad_glcluc.LandClass.FOREST.value
+    GRASSLAND = glad_glcluc.LandClass.GRASSLAND.value
+    is_emissive = ((before == FOREST) | (before == GRASSLAND)) & ~(
+        (after == FOREST) | (after == GRASSLAND)
     )
 
     peatlands_conversion_emissions = (
@@ -243,28 +260,31 @@ def get_peatland_occupation_emissions(
         glad_glcluc.LandClass.SNOW_ICE.value,
         glad_glcluc.LandClass.WATER.value,
     )
+    is_undrained = functools.reduce(
+        operator.or_, (latest_land_class == value for value in undrained_classes)
+    )
     return PEATLAND_EMISSIONS_ANNUAL_TCO2E_PER_HA * is_peatland.where(
-        ~latest_land_class.isin(undrained_classes), other=0
+        ~is_undrained, other=0
     ).rename("tco2e-per-ha")
 
 
-EpochType = tuple[int, int]
-EPOCH_TO_LINEAR_DISCOUNT_WEIGHT: dict[EpochType, float] = {
+SpanType = tuple[int, int]
+SPAN_TO_LINEAR_DISCOUNT_WEIGHT: dict[SpanType, float] = {
     (2000, 2005): 0.0125,
     (2005, 2010): 0.0375,
     (2010, 2015): 0.0625,
     (2015, 2020): 0.0875,
 }
-assert all((after - before) == 5 for (before, after) in EPOCH_TO_LINEAR_DISCOUNT_WEIGHT)
-assert math.isclose(sum(EPOCH_TO_LINEAR_DISCOUNT_WEIGHT.values()), 0.2)
+assert all((after - before) == 5 for (before, after) in SPAN_TO_LINEAR_DISCOUNT_WEIGHT)
+assert math.isclose(sum(SPAN_TO_LINEAR_DISCOUNT_WEIGHT.values()), 0.2)
 
 
 def get_linear_discounted_emissions(
-    epoch_to_emissions: dict[EpochType, xarray.DataArray],
+    span_to_emissions: dict[SpanType, xarray.DataArray],
 ) -> xarray.DataArray:
     ret = sum(
-        emissions * EPOCH_TO_LINEAR_DISCOUNT_WEIGHT[epoch]
-        for epoch, emissions in epoch_to_emissions.items()
+        emissions * SPAN_TO_LINEAR_DISCOUNT_WEIGHT[span]
+        for span, emissions in span_to_emissions.items()
     )
     return typing.cast(xarray.DataArray, ret).rename("tco2e-per-ha")
 
@@ -279,20 +299,24 @@ def get_hectares_per_pixel(darray: xarray.DataArray) -> xarray.DataArray:
     delta_latitude_degrees = abs(float(darray.y.diff("y").mean()))
 
     return (
-        # hectares at equator
-        (delta_latitude_degrees * meters_per_latitude_degrees)
-        * (delta_longitude_degrees * equator_meters_per_longitude_degrees)
-        / 10_000
-        # projection to latitude
-        * numpy.cos(darray.y * numpy.pi / 180)
-        # broadcast across x while inheriting darray's aligned 2-D chunking
-        * xarray.ones_like(darray)
-    ).rename("ha")
+        (
+            # hectares at equator
+            (delta_latitude_degrees * meters_per_latitude_degrees)
+            * (delta_longitude_degrees * equator_meters_per_longitude_degrees)
+            / 10_000
+            # projection to latitude
+            * numpy.cos(darray.y * numpy.pi / 180)
+            # broadcast across x while inheriting darray's aligned 2-D chunking
+            * xarray.ones_like(darray)
+        )
+        .astype(numpy.float32)
+        .rename("ha")
+    )
 
 
 def get_dset_for_output(name_to_darray: dict[str, xarray.DataArray]) -> xarray.Dataset:
     chunk_size = geo.get_chunk_size(
-        dtypes=[numpy.dtype("float32")] * len(name_to_darray), number_of_dimensions=2
+        dtypes=[numpy.dtype("float32")] * len(name_to_darray)
     )
 
     def merge_name_units(name: str, units: typing.Hashable | None) -> str:
@@ -310,10 +334,16 @@ def get_dset_for_output(name_to_darray: dict[str, xarray.DataArray]) -> xarray.D
     )
 
 
-@gcs.cache(version=2)
-def workflow(tile_ids: tiling.TileSetType) -> xarray.Dataset:
+@storage.cache_to_zarr(version=0)
+def workflow(tile_ids: tuple[str, ...]) -> xarray.Dataset:
     logger.info(f"Running the land conversion and emissions worflow for {tile_ids=:}")
-    dset = harmonize.workflow(dataset_names=harmonize.DATASET_NAMES, tile_ids=tile_ids)
+    dset = harmonize.workflow(
+        dataset_names=harmonize.LUC_AND_EMISSIONS_DATASET_NAMES,
+        ignore_missing_tiles=False,
+        skip_ingest=False,
+        tile_ids=tile_ids,
+        tile_resolution=tiling.TileResolution.GLAD.value,
+    )
 
     logger.info("Mapping GLCLUC values to land classes")
     year_to_land_class = {
@@ -349,7 +379,7 @@ def workflow(tile_ids: tiling.TileSetType) -> xarray.Dataset:
         )
         for year, land_class in year_to_land_class.items()
     }
-    epoch_to_vegetation_emissions = {
+    span_to_vegetation_emissions = {
         (before, after): get_vegetation_emissions(
             after=year_to_vegetation_carbon[after],
             before=year_to_vegetation_carbon[before],
@@ -359,7 +389,7 @@ def workflow(tile_ids: tiling.TileSetType) -> xarray.Dataset:
 
     logger.info("Quantifying soil emissions")
     is_peatland = dset[gfw_global_peatlands.DATASET.fully_qualified_band_name]
-    epoch_to_soil_emissions = {
+    span_to_soil_emissions = {
         (before, after): get_soil_emissions(
             after=year_to_land_class[after],
             before=year_to_land_class[before],
@@ -371,11 +401,11 @@ def workflow(tile_ids: tiling.TileSetType) -> xarray.Dataset:
     }
 
     logger.info("Summing emissions from vegetation and soil")
-    epoch_to_emissions: dict[EpochType, xarray.DataArray] = {
-        epoch: (
-            epoch_to_vegetation_emissions[epoch] + epoch_to_soil_emissions[epoch]
+    span_to_emissions: dict[SpanType, xarray.DataArray] = {
+        span: (
+            span_to_vegetation_emissions[span] + span_to_soil_emissions[span]
         ).rename("tco2e-per-ha")
-        for epoch in epoch_to_vegetation_emissions
+        for span in span_to_vegetation_emissions
     }
 
     logger.info("Quantifying and adding peatland occupation emissions")
@@ -383,13 +413,9 @@ def workflow(tile_ids: tiling.TileSetType) -> xarray.Dataset:
         is_peatland=is_peatland, year_to_land_class=year_to_land_class
     )
     emissions_per_hectare: xarray.DataArray = (
-        get_linear_discounted_emissions(epoch_to_emissions=epoch_to_emissions)
+        get_linear_discounted_emissions(span_to_emissions=span_to_emissions)
         + peatland_occupation_emissions
     )
-
-    logger.info("Scaling by area")
-    hectares_per_pixel = get_hectares_per_pixel(darray=emissions_per_hectare)
-    emissions = (emissions_per_hectare * hectares_per_pixel).rename("tco2e")
 
     return get_dset_for_output(
         name_to_darray={
@@ -397,32 +423,21 @@ def workflow(tile_ids: tiling.TileSetType) -> xarray.Dataset:
             for year, darray in year_to_land_class.items()
         }
         | {
-            "aboveground-carbon": aboveground_carbon,
-            "belowground-carbon": belowground_carbon,
-            "dead-organic-matter-carbon": dead_organic_matter_carbon,
-            "grassland-carbon": grassland_carbon,
-        }
-        | {
-            f"vegetation-carbon:{year:d}": darray
-            for year, darray in year_to_vegetation_carbon.items()
-        }
-        | {
             f"vegetation-emissions:{before:d}-{after:d}": darray
-            for (before, after), darray in epoch_to_vegetation_emissions.items()
+            for (before, after), darray in span_to_vegetation_emissions.items()
         }
         | {
             f"soil-emissions:{before:d}-{after:d}": darray
-            for (before, after), darray in epoch_to_soil_emissions.items()
+            for (before, after), darray in span_to_soil_emissions.items()
         }
         | {
             f"emissions:{before:d}-{after:d}": darray
-            for (before, after), darray in epoch_to_emissions.items()
+            for (before, after), darray in span_to_emissions.items()
         }
         | {
             "peatland-occupation": peatland_occupation_emissions,
             "emissions-per-hectare": emissions_per_hectare,
-            "hectares-per-pixel": hectares_per_pixel,
-            "emissions": emissions,
+            "hectares-per-pixel": get_hectares_per_pixel(darray=emissions_per_hectare),
         }
     )
 
@@ -435,12 +450,14 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "tile_set_name", choices=sorted(e.name for e in tiling.TileSetName)
+        "continent_names",
+        choices=sorted(e.name for e in continents.Continent),
+        nargs=argparse.ONE_OR_MORE,
     )
     args = parser.parse_args()
 
-    tile_set_name = tiling.TileSetName[str(args.tile_set_name)]
-    workflow(tile_ids=tiling.NAME_TO_TILE_SET[tile_set_name])
+    for continent_name in map(str, args.continent_names):
+        workflow(tile_ids=continents.Continent[continent_name].value)
     return 0
 
 

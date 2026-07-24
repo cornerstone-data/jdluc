@@ -4,8 +4,10 @@ from jdluc.datasets import (
     base,
     gfw_global_peatlands,
     gfw_harris_agb,
+    gfw_tcl,
     glad_glcluc,
     huang_bgb,
+    ifpri_mapspam,
     ipcc_climate_zones,
     soilgrids_ocs,
     usda_nass_cdl,
@@ -14,7 +16,8 @@ from jdluc.datasets import (
 )
 
 
-class DatasetName(enum.Enum):
+@enum.unique
+class DatasetName(enum.StrEnum):
     @staticmethod
     def _generate_next_value_(
         name: str, start: int, count: int, last_values: list[str]
@@ -23,8 +26,17 @@ class DatasetName(enum.Enum):
 
     GFW_GLOBAL_PEATLANDS = enum.auto()
     GFW_HARRIS_AGB = enum.auto()
+    GFW_TREE_COVER_LOSS = enum.auto()
     GLAD_GLCLUC = enum.auto()
     HUANG_BGB = enum.auto()
+    IFPRI_MAPSPAM_PHYSICAL_AREA_2000 = enum.auto()
+    IFPRI_MAPSPAM_PHYSICAL_AREA_2005 = enum.auto()
+    IFPRI_MAPSPAM_PHYSICAL_AREA_2010 = enum.auto()
+    IFPRI_MAPSPAM_PHYSICAL_AREA_2020 = enum.auto()
+    IFPRI_MAPSPAM_PRODUCTION_2000 = enum.auto()
+    IFPRI_MAPSPAM_PRODUCTION_2005 = enum.auto()
+    IFPRI_MAPSPAM_PRODUCTION_2010 = enum.auto()
+    IFPRI_MAPSPAM_PRODUCTION_2020 = enum.auto()
     IPCC_CLIMATE_ZONES = enum.auto()
     SOILGRIDS_OCS = enum.auto()
     USDA_NASS_CDL = enum.auto()
@@ -39,8 +51,17 @@ NAME_TO_CLS: dict[
 ] = {
     DatasetName.GFW_GLOBAL_PEATLANDS: gfw_global_peatlands.DATASET,
     DatasetName.GFW_HARRIS_AGB: gfw_harris_agb.DATASET,
+    DatasetName.GFW_TREE_COVER_LOSS: gfw_tcl.DATASET,
     DatasetName.GLAD_GLCLUC: glad_glcluc.DATASET,
     DatasetName.HUANG_BGB: huang_bgb.DATASET,
+    DatasetName.IFPRI_MAPSPAM_PHYSICAL_AREA_2000: ifpri_mapspam.PHYSICAL_AREA_2000,
+    DatasetName.IFPRI_MAPSPAM_PHYSICAL_AREA_2005: ifpri_mapspam.PHYSICAL_AREA_2005,
+    DatasetName.IFPRI_MAPSPAM_PHYSICAL_AREA_2010: ifpri_mapspam.PHYSICAL_AREA_2010,
+    DatasetName.IFPRI_MAPSPAM_PHYSICAL_AREA_2020: ifpri_mapspam.PHYSICAL_AREA_2020,
+    DatasetName.IFPRI_MAPSPAM_PRODUCTION_2000: ifpri_mapspam.PRODUCTION_2000,
+    DatasetName.IFPRI_MAPSPAM_PRODUCTION_2005: ifpri_mapspam.PRODUCTION_2005,
+    DatasetName.IFPRI_MAPSPAM_PRODUCTION_2010: ifpri_mapspam.PRODUCTION_2010,
+    DatasetName.IFPRI_MAPSPAM_PRODUCTION_2020: ifpri_mapspam.PRODUCTION_2020,
     DatasetName.IPCC_CLIMATE_ZONES: ipcc_climate_zones.DATASET,
     DatasetName.SOILGRIDS_OCS: soilgrids_ocs.DATASET,
     DatasetName.USDA_NASS_CDL: usda_nass_cdl.DATASET,

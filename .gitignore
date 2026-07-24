@@ -7,7 +7,7 @@ __pycache__/
 .idea/
 .claude/
 
-# Notebook scratch — version-controlled notebooks live under specs/analyses/ only.
+# Notebook scratch — version-controlled notebooks live under analyses/ only.
 *.ipynb
 .ipynb_checkpoints/
 

@@ -7,7 +7,7 @@ import xarray
 
 from jdluc.datasets.glad_glcluc import LandClass
 from jdluc.datasets.ipcc_climate_zones import Zone
-from jdluc.emissions import (
+from jdluc.emit import (
     CARBON_PER_BIOMASS_LIVE_WOOD,
     CO2E_PER_CARBON,
     get_belowground_carbon,
@@ -156,7 +156,7 @@ def test_get_mineral_soil_emissions() -> None:
         soil_organic_carbon=get_darray_for_data(data=soc),
     )
     assert result.name == "tco2e-per-ha"
-    assert numpy.array_equal(
+    numpy.testing.assert_allclose(
         result.data * 3,
         numpy.array([[0, 0, 0, 0], [2.53, 1.87, 0, 0], [5.06, 3.74, 0, 0]]),
     )
@@ -188,7 +188,7 @@ def test_get_soil_emissions() -> None:
         soil_organic_carbon=get_darray_for_data(data=soc),
     )
     assert result.name == "tco2e-per-ha"
-    assert numpy.array_equal(
+    numpy.testing.assert_allclose(
         result.data,
         numpy.array(
             [
@@ -226,7 +226,7 @@ def test_get_peatland_occupation_emissions() -> None:
 
 def test_get_linear_discounted_emissions() -> None:
     result = get_linear_discounted_emissions(
-        epoch_to_emissions={
+        span_to_emissions={
             (2000, 2005): get_darray_for_data(data=[[1]]),
             (2005, 2010): get_darray_for_data(data=[[2]]),
             (2010, 2015): get_darray_for_data(data=[[3]]),

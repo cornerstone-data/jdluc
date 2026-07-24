@@ -21,7 +21,6 @@ import tempfile
 import zipfile
 
 import numpy
-import rasterio.enums
 import xarray
 
 from jdluc import tiling, utils
@@ -36,9 +35,9 @@ def _get_dataarray() -> xarray.DataArray:
     with tempfile.TemporaryDirectory() as local_dir:
         path_to_zip = os.path.join(local_dir, "data.zip")
         utils.save_remote_url_to_local_path(
-            remote_url="https://ndownloader.figshare.com/files/22432460",
-            params={},
             local_path=path_to_zip,
+            params={},
+            remote_url="https://ndownloader.figshare.com/files/22432460",
         )
         logger.info(f"Extracting .nc from {path_to_zip=:s}")
         path_to_nc: str | None = None
@@ -75,10 +74,10 @@ def _save_tile_id_to_local_path(local_path: str, tile_id: str) -> None:
 
 DATASET = base.RasterDataset(
     band_names=["belowground-biomass-mg-per-ha"],
+    band_type=base.BandType.INTENSIVE,
     no_data=None,
     partitioning=tiling.Partitioning.TEN_DEGREE_TILE,
     product_name="bgb",
-    resampling=rasterio.enums.Resampling.bilinear,
     save_tile_id_to_local_path=_save_tile_id_to_local_path,
     source_name="huang",
     version="v0",

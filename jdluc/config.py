@@ -1,5 +1,6 @@
 import dataclasses
 import functools
+import json
 import logging
 import typing
 
@@ -10,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass
 class Config:
-    ingest_bucket_name: str
-    gcp_project: str
+    harvard_dataverse_guestbook_json: str
+    ingest_root: str
     number_of_dask_workers: int
-    scratch_bucket_name: str
+    scratch_root: str
     usda_nass_api_key: str
 
     @classmethod
@@ -30,3 +31,8 @@ class Config:
                 for field in dataclasses.fields(cls)
             }
         )
+
+    def get_json_as_object(self, attr: str) -> dict[str, str]:
+        s = getattr(self, attr)
+        assert isinstance(s, str)
+        return json.loads(s=s)

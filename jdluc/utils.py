@@ -1,4 +1,6 @@
+import collections
 import datetime
+import enum
 import functools
 import logging
 import threading
@@ -6,6 +8,7 @@ import typing
 
 import git
 import requests
+import xarray
 
 logger = logging.getLogger(__name__)
 
@@ -72,3 +75,19 @@ def threadsafe_cache[**P, R](func: typing.Callable[P, R]) -> typing.Callable[P, 
     inner.cache_info = cached.cache_info  # type: ignore
     inner.cache_parameters = cached.cache_parameters  # type: ignore
     return inner
+
+
+def get_sum_totals[E: enum.Enum](
+    enum_to_name_to_darray: dict[E, dict[str, xarray.DataArray]],
+) -> dict[str, dict[str, float]]:
+    enum_name_to_darray = {
+        (e, name): darray
+        for e, name_to_darray in enum_to_name_to_darray.items()
+        for name, darray in name_to_darray.items()
+    }
+    batched_sum = xarray.Dataset(enum_name_to_darray).sum().compute()
+
+    ret: dict[str, dict[str, float]] = collections.defaultdict(dict)
+    for e, name in enum_name_to_darray:
+        ret[e.name][name] = float(batched_sum[(e, name)])
+    return ret

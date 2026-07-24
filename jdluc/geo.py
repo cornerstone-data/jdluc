@@ -1,13 +1,15 @@
 import collections.abc
 import logging
 import math
+import tempfile
 import typing
 
-import geopandas
 import numpy
 import rasterio
-import rio_cogeo.cogeo
-import rio_cogeo.profiles
+import rasterio.enums
+import rasterio.shutil
+import rasterio.transform
+import rasterio.vrt
 import shapely
 import xarray
 
@@ -36,6 +38,9 @@ def convert_geotiff_to_cog(
     path_to_cog: str,
     path_to_geotiff: str,
 ) -> None:
+    import rio_cogeo.cogeo
+    import rio_cogeo.profiles
+
     logger.info(f"Getting overview level from {path_to_geotiff=:s}")
     with rasterio.open(fp=path_to_geotiff) as dataset:
         overview_level = get_overview_level(
@@ -56,6 +61,7 @@ def convert_geotiff_to_cog(
         overview_level=overview_level,
         quiet=False,
         source=path_to_geotiff,
+        use_cog_driver=True,
     )
 
 
@@ -65,6 +71,8 @@ def convert_vector_to_flatgeobuf(
     path_to_flatgeobuf: str,
     path_to_vector: str,
 ) -> None:
+    import geopandas
+
     logger.info(
         f"Opening {path_to_vector=:s} for {id_column_names=:} and {name_column_names=:}"
     )
@@ -101,14 +109,13 @@ def validate_geotiff(path_to_geotiff: str) -> None:
         assert dataset.width > 0
         assert dataset.transform.a > 0
         assert dataset.transform.e < 0
-        assert dataset.width == dataset.height
 
 
 def get_chunk_size(
     dtypes: collections.abc.Iterable[numpy.dtype],
-    number_of_dimensions: int,
-    # 4 GiB
-    max_bytes_per_chunk: int = 1 << 32,
+    # 1 GiB
+    max_bytes_per_chunk: int = 1 << 30,
+    number_of_dimensions: int = 2,
 ) -> int:
     # Sum over all the variables
     bytes_per_pixel = sum(dtype.itemsize for dtype in dtypes)
@@ -137,5 +144,85 @@ def clip_dset(dset: xarray.Dataset, geometry: shapely.Geometry) -> xarray.Datase
     assert isinstance(geometry, shapely.Polygon | shapely.MultiPolygon)
     import rioxarray  # noqa
 
-    ret = dset.rio.clip_box(*geometry.bounds).rio.clip([geometry], drop=True)
+    overlap = geometry.intersection(shapely.box(*dset.rio.bounds()))
+    if overlap.area == 0:
+        logger.warning("Geometry and Dataset don't overlap; returning an empty array")
+        assert set(dset.dims) == {"x", "y"}
+        return dset.isel(x=slice(0, 0), y=slice(0, 0))
+    else:
+        ret = dset.rio.clip_box(
+            *overlap.bounds, allow_one_dimensional_raster=True
+        ).rio.clip([overlap], drop=True)
     return typing.cast(xarray.Dataset, ret)
+
+
+def exact_merge(*dsets: xarray.Dataset) -> xarray.Dataset:
+    return xarray.merge(
+        list(dsets),
+        combine_attrs="identical",
+        compat="identical",
+        join="exact",
+    ).unify_chunks()
+
+
+def downscale_darray(
+    darray: xarray.DataArray,
+    epsg: int,
+    height: int,
+    resampling: rasterio.enums.Resampling,
+    transform: tuple[float, float, float, float, float, float],
+    width: int,
+) -> xarray.DataArray:
+    import rioxarray
+
+    logger.info(f"Downscaling {darray.name=:s}")
+
+    import dask.diagnostics
+
+    path_to_unscaled = tempfile.NamedTemporaryFile(  # noqa: SIM115
+        delete=False, suffix=".glad.tif"
+    ).name
+    chunk_size = 1 << 11  # 2k
+    logger.debug(f"Serializing to {path_to_unscaled=:s} with {chunk_size=:d}")
+    with dask.diagnostics.ProgressBar(dt=5, minimum=1):
+        darray.chunk(chunks=chunk_size).rio.to_raster(
+            path_to_unscaled,
+            blockxsize=chunk_size,
+            blockysize=chunk_size,
+            compress="ZSTD",
+            driver="GTiff",
+            lock=True,
+            num_threads="all_cpus",
+            tiled=True,
+            BIGTIFF="IF_SAFER",
+            ZSTD_LEVEL=1,
+        )
+    with (
+        rasterio.open(path_to_unscaled) as unscaled_fp,
+        rasterio.vrt.WarpedVRT(
+            unscaled_fp,
+            crs=f"EPSG:{epsg:d}",
+            height=height,
+            resampling=resampling,
+            transform=rasterio.transform.Affine.from_gdal(*transform),
+            width=width,
+        ) as scaled_vrt,
+        tempfile.NamedTemporaryFile(delete=False, suffix=".warped.vrt") as scaled_fp,
+    ):
+        logger.debug(f"Writing warped VRT to {scaled_fp.name=:s}")
+        rasterio.shutil.copy(scaled_vrt, scaled_fp.name, driver="VRT")
+    ret = rioxarray.open_rasterio(
+        scaled_fp.name,
+        chunks=get_chunk_size(
+            dtypes=[numpy.dtype("float32")],
+            # 128 kiB ~ 1 GiB x (12 ÷ 4_000 resolution) ÷ 14 bands
+            max_bytes_per_chunk=1 << 17,
+        ),
+        lock=False,
+    )
+    assert isinstance(ret, xarray.DataArray)
+    return unify_dtype_and_no_data(
+        darray=ret.drop_vars("spatial_ref")
+        .isel(band=0, drop=True)
+        .rename(ret.attrs.pop("long_name"))
+    )

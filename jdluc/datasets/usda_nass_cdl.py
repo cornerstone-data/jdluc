@@ -43,9 +43,9 @@ def _get_dataarray() -> xarray.DataArray:
     with tempfile.TemporaryDirectory() as local_dir:
         path_to_zip = os.path.join(local_dir, "data.zip")
         utils.save_remote_url_to_local_path(
-            remote_url=f"https://www.nass.usda.gov/Research_and_Science/Cropland/Release/datasets/{YEAR:d}_30m_cdls.zip",
-            params={},
             local_path=path_to_zip,
+            params={},
+            remote_url=f"https://www.nass.usda.gov/Research_and_Science/Cropland/Release/datasets/{YEAR:d}_30m_cdls.zip",
         )
         logger.info(f"Extracting .tif from {path_to_zip=:s}")
         path_to_geotiff: str | None = None
@@ -58,9 +58,7 @@ def _get_dataarray() -> xarray.DataArray:
         logger.info(f"Loading {path_to_geotiff=:s} into xarray")
         darray = rioxarray.open_rasterio(
             path_to_geotiff,
-            chunks=geo.get_chunk_size(
-                dtypes=[numpy.dtype("uint8")], number_of_dimensions=2
-            ),
+            chunks=geo.get_chunk_size(dtypes=[numpy.dtype("uint8")]),
         )
         assert isinstance(darray, xarray.DataArray)
         logger.info(f"Reprojecting from {darray.rio.crs.to_epsg():d} to 4326")
@@ -80,11 +78,11 @@ def _save_tile_id_to_local_path(local_path: str, tile_id: str) -> None:
         transform=rasterio.transform.from_origin(
             min_lon,
             max_lat,
-            10 / tiling.PIXELS_PER_TEN_DEGREE_TILE,
-            10 / tiling.PIXELS_PER_TEN_DEGREE_TILE,
+            10 / tiling.TileResolution.GLAD.x,
+            10 / tiling.TileResolution.GLAD.x,
         ),
-        shape=(tiling.PIXELS_PER_TEN_DEGREE_TILE, tiling.PIXELS_PER_TEN_DEGREE_TILE),
-        resampling=DATASET.resampling,
+        shape=(tiling.TileResolution.GLAD.x, tiling.TileResolution.GLAD.y),
+        resampling=rasterio.enums.Resampling.nearest,
         nodata=DATASET.no_data,
     )
     logger.info(f"Saving xarray to {local_path=:s} for {tile_id=:s}")
@@ -93,10 +91,10 @@ def _save_tile_id_to_local_path(local_path: str, tile_id: str) -> None:
 
 DATASET = base.RasterDataset(
     band_names=["crop-class"],
+    band_type=base.BandType.CATEGORICAL,
     no_data=0,
     partitioning=tiling.Partitioning.TEN_DEGREE_TILE,
     product_name="cdl",
-    resampling=rasterio.enums.Resampling.nearest,
     save_tile_id_to_local_path=_save_tile_id_to_local_path,
     source_name="usda-nass",
     # v1: reproject data so that when it doesn't cover a full tile it doesn't get stretched
@@ -105,7 +103,7 @@ DATASET = base.RasterDataset(
 
 
 @enum.unique
-class CropClass(enum.Enum):
+class CropClass(enum.IntEnum):
     # https://www.nass.usda.gov/Research_and_Science/Cropland/sarsfaqs2.php#what.7
     # NO DATA, BACKGROUND 0
     BACKGROUND = 0

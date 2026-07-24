@@ -5,12 +5,12 @@ from jdluc.datasets.worldbank_jurisdictions import get_ten_degree_tile_ids_for_a
 
 
 def test_flatten_ranges() -> None:
-    assert flatten_ranges(range(0, 5), range(5, 10), range(10, 15)) == list(range(15))
+    assert flatten_ranges(range(5), range(5, 10), range(10, 15)) == list(range(15))
 
 
 @pytest.mark.integration
 def test_get_ten_degree_tile_ids_for_country() -> None:
-    iso_a3 = "BRA"  # Brazil
+    iso_3166 = "BRA"  # Brazil
     expected = (
         "00N_040W",
         "00N_050W",
@@ -32,6 +32,6 @@ def test_get_ten_degree_tile_ids_for_country() -> None:
         "30S_060W",
     )
     assert (
-        tuple(get_ten_degree_tile_ids_for_admin_id(admin_id=iso_a3, admin_level=0))
+        tuple(get_ten_degree_tile_ids_for_admin_id(admin_id=iso_3166, admin_level=0))
         == expected
     )

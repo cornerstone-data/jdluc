@@ -10,20 +10,24 @@ jobs:
   lint-and-type:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.3.2
         with:
           enable-cache: true
       - name: Install dependencies
         run: uv sync
+      - uses: actions/cache@v6
+        with:
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          path: ~/.cache/pre-commit
       - name: pre-commit
         run: uv run pre-commit run --all-files
 
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8.3.2
         with:
           enable-cache: true
       - name: Install dependencies

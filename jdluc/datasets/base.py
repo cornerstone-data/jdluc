@@ -7,14 +7,13 @@ import tempfile
 import typing
 
 import pandas
-import rasterio.enums
 
-from jdluc import gcs, geo, tiling, utils
+from jdluc import geo, storage, tiling, utils
 
 logger = logging.getLogger(__name__)
 
 
-class AssetType(enum.Enum):
+class AssetType(enum.StrEnum):
     @typing.override
     def __str__(self) -> str:
         return self.name.lower().replace("_", "-")
@@ -24,21 +23,29 @@ class AssetType(enum.Enum):
     TABULAR = enum.auto()
 
 
+class BandType(enum.IntEnum):
+    CATEGORICAL = enum.auto()
+    EXTENSIVE = enum.auto()
+    INTENSIVE = enum.auto()
+
+
 SaveTileIdToLocalPathType = collections.abc.Callable[[str, str], None]
 
 
 @dataclasses.dataclass
 class RasterDataset:
     band_names: list[str]
+    band_type: BandType
     no_data: float | int | None
     partitioning: tiling.Partitioning
     product_name: str
-    resampling: rasterio.enums.Resampling
-    save_tile_id_to_local_path: SaveTileIdToLocalPathType
     source_name: str
     version: str
+    save_tile_id_to_local_path: SaveTileIdToLocalPathType = dataclasses.field(
+        repr=False
+    )
 
-    def get_gcs_prefix(self, tile_id: str) -> str:
+    def get_prefix(self, tile_id: str) -> str:
         return os.path.join(
             str(AssetType.RASTER),
             self.source_name,
@@ -48,16 +55,10 @@ class RasterDataset:
             f"{tile_id:s}.tif",
         )
 
-    def ingest_a_tile(
-        self, bucket_name: str, gcp_project: str, overwrite: bool, tile_id: str
-    ) -> str:
-        # Stage a geotiff to a tmpdir, clean up and convert to COG, then upload to a templated GCS prefix
-        gcs_uri = gcs.get_uri_from_bucket_name_prefix(
-            bucket_name=bucket_name, prefix=self.get_gcs_prefix(tile_id=tile_id)
-        )
-        if overwrite or not gcs.gcs_blob_exists(
-            gcp_project=gcp_project, remote_path=gcs_uri
-        ):
+    def ingest_a_tile(self, overwrite: bool, root: str, tile_id: str) -> str:
+        # Stage a geotiff to a tmpdir, clean up and convert to COG, then write to a templated path
+        uri = storage.join_uri(root=root, prefix=self.get_prefix(tile_id=tile_id))
+        if overwrite or not storage.path_exists(uri=uri):
             with tempfile.TemporaryDirectory() as tmpdir:
                 path_to_geotiff = os.path.join(tmpdir, "geotiff.tif")
                 self.save_tile_id_to_local_path(path_to_geotiff, tile_id)
@@ -79,15 +80,12 @@ class RasterDataset:
                     path_to_cog=path_to_cog,
                     path_to_geotiff=path_to_geotiff,
                 )
-                gcs.upload_local_path_to_gcs(
-                    gcp_project=gcp_project, local_path=path_to_cog, remote_path=gcs_uri
-                )
+                storage.put_file(local_path=path_to_cog, uri=uri)
         else:
-            logger.warning(
-                f"Skipping upload of {tile_id=:s} to GCS because {gcs_uri=:s} "
-                f"exists and {overwrite=:}"
+            logger.info(
+                f"Skipping writing of {tile_id=:s} because {uri=:s} exists and {overwrite=:}"
             )
-        return gcs_uri
+        return uri
 
     @property
     def fully_qualified_band_names(self) -> list[str]:
@@ -115,7 +113,7 @@ class VectorDataset:
     def partitioning(self) -> tiling.Partitioning:
         return tiling.Partitioning.WHOLE_WORLD
 
-    def get_gcs_prefix(self, tile_id: str) -> str:
+    def get_prefix(self, tile_id: str) -> str:
         return os.path.join(
             str(AssetType.VECTOR),
             self.source_name,
@@ -125,16 +123,10 @@ class VectorDataset:
             f"{tile_id:s}.fgb",
         )
 
-    def ingest_a_tile(
-        self, bucket_name: str, gcp_project: str, overwrite: bool, tile_id: str
-    ) -> str:
-        # Stage a vector file to a tmpdir, clean up and convert to flatgeobuf, then upload to a templated GCS prefix
-        gcs_uri = gcs.get_uri_from_bucket_name_prefix(
-            bucket_name=bucket_name, prefix=self.get_gcs_prefix(tile_id=tile_id)
-        )
-        if overwrite or not gcs.gcs_blob_exists(
-            gcp_project=gcp_project, remote_path=gcs_uri
-        ):
+    def ingest_a_tile(self, overwrite: bool, root: str, tile_id: str) -> str:
+        # Stage a vector file to a tmpdir, clean up and convert to flatgeobuf, then write to a templated path
+        uri = storage.join_uri(root=root, prefix=self.get_prefix(tile_id=tile_id))
+        if overwrite or not storage.path_exists(uri=uri):
             with tempfile.TemporaryDirectory() as tmpdir:
                 path_to_vector = os.path.join(tmpdir, "vector.dat")
                 self.save_tile_id_to_local_path(path_to_vector, tile_id)
@@ -145,17 +137,12 @@ class VectorDataset:
                     path_to_flatgeobuf=path_to_flatgeobuf,
                     path_to_vector=path_to_vector,
                 )
-                gcs.upload_local_path_to_gcs(
-                    gcp_project=gcp_project,
-                    local_path=path_to_flatgeobuf,
-                    remote_path=gcs_uri,
-                )
+                storage.put_file(local_path=path_to_flatgeobuf, uri=uri)
         else:
             logger.warning(
-                f"Skipping upload of {tile_id=:s} to GCS because {gcs_uri=:s} "
-                f"exists and {overwrite=:}"
+                f"Skipping writing of {tile_id=:s} because {uri=:s} exists and {overwrite=:}"
             )
-        return gcs_uri
+        return uri
 
 
 GetRecordsForTileIdType = typing.Callable[[str], list[dict[str, str | float]]]
@@ -173,7 +160,7 @@ class TabularDataset:
     def partitioning(self) -> tiling.Partitioning:
         return tiling.Partitioning.WHOLE_WORLD
 
-    def get_gcs_prefix(self, tile_id: str) -> str:
+    def get_prefix(self, tile_id: str) -> str:
         return os.path.join(
             str(AssetType.TABULAR),
             self.source_name,
@@ -183,15 +170,9 @@ class TabularDataset:
             f"{tile_id:s}.parquet",
         )
 
-    def ingest_a_tile(
-        self, bucket_name: str, gcp_project: str, overwrite: bool, tile_id: str
-    ) -> str:
-        gcs_uri = gcs.get_uri_from_bucket_name_prefix(
-            bucket_name=bucket_name, prefix=self.get_gcs_prefix(tile_id=tile_id)
-        )
-        if overwrite or not gcs.gcs_blob_exists(
-            gcp_project=gcp_project, remote_path=gcs_uri
-        ):
+    def ingest_a_tile(self, overwrite: bool, root: str, tile_id: str) -> str:
+        uri = storage.join_uri(root=root, prefix=self.get_prefix(tile_id=tile_id))
+        if overwrite or not storage.path_exists(uri=uri):
             with tempfile.TemporaryDirectory() as tmpdir:
                 local_path = os.path.join(tmpdir, "data.parquet")
                 records = self.get_records_for_tile_id(tile_id)
@@ -201,12 +182,9 @@ class TabularDataset:
                     .sort_index()
                 )
                 df.to_parquet(path=local_path)
-                gcs.upload_local_path_to_gcs(
-                    gcp_project=gcp_project, local_path=local_path, remote_path=gcs_uri
-                )
+                storage.put_file(local_path=local_path, uri=uri)
         else:
             logger.warning(
-                f"Skipping upload of {tile_id=:s} to GCS because {gcs_uri=:s} "
-                f"exists and {overwrite=:}"
+                f"Skipping writing of {tile_id=:s} because {uri=:s} exists and {overwrite=:}"
             )
-        return gcs_uri
+        return uri

@@ -69,7 +69,7 @@ _All values in t CO₂-eq ha⁻¹ yr⁻¹, converted from t C using × 3.667, an
 
 Critically, these IPCC Tier 1 factors are based on calibration data from very differently aged plantations. The tropical plantations are under 10 years at median. In contrast, the temperate and boreal peatlands are decades to centuries old. This approach may make sense for national inventories, since it reflects a real difference in the typical ages of peatland drainage in those regions, but it must be parsed out for time-dependent models.
 
-Appendix A shows a review of the studies used to generate the IPCC values, and the time periods of the sites used for each emissions factor.
+The appendix below shows a review of the studies used to generate the IPCC values, and the time periods of the sites used for each emissions factor.
 
 ## Modeling time-dependence mathematically
 
@@ -167,7 +167,7 @@ The linear ramp undershoots the reference curve in year 1 and slightly overshoot
 
 ## Calculations
 
-See the [accompanying python notebook](analyses/peatland_emissions_modeling.ipynb) for curve fits and related calculations.
+See the [accompanying python notebook](../analyses/peatland_emissions_modeling.ipynb) for curve fits and related calculations.
 
 ## Appendix: IPCC Literature Review
 

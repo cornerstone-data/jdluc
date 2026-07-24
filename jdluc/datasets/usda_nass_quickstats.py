@@ -1,3 +1,30 @@
+"""USDA National Agricultural Statistics Service | Quick Stats (survey)
+
+license: public domain
+
+year: 1866, ..., 2025
+
+United States Department of Agriculture (USDA) National Agricultural Statistics Service (NASS), Quick Stats: USDA NASS, Washington, D.C.
+
+https://quickstats.nass.usda.gov/
+https://www.nass.usda.gov/Surveys/
+
+# Methodology
+
+- Tabular statistics from farmer/rancher questionnaires (NOT remote sensing)
+- Sample-based: hundreds of surveys per year (e.g. Crop Production,
+  Agricultural Prices, Grain Stocks, Cattle/Hog inventory, ARMS)
+- Samples drawn from a list frame (known operations) plus an area frame
+  (land segments), combined to cover operations missing from the list
+- Collected by mail, phone (CATI), online (agcounts.usda.gov), and field
+  enumeration
+- Responses expanded to population estimates; final published values set by
+  the Agricultural Statistics Board
+- Only aggregated values published; small/identifying cells suppressed for
+  confidentiality (Title 7 U.S.C., CIPSEA)
+- API access: max 50,000 records/request (use bulk file downloads for more)
+"""
+
 import csv
 import dataclasses
 import io
@@ -5,7 +32,9 @@ import logging
 import typing
 import urllib.parse
 
-from jdluc import config, utils
+import pandas
+
+from jdluc import config, storage, utils
 from jdluc.datasets import base, worldbank_jurisdictions
 
 logger = logging.getLogger(__name__)
@@ -153,3 +182,12 @@ DATASET = base.TabularDataset(
     source_name="usda-nass",
     version="2025",
 )
+
+
+def load() -> pandas.DataFrame:
+    uri = storage.join_uri(
+        root=config.Config.from_dot_env().ingest_root,
+        prefix=DATASET.get_prefix(tile_id="world"),
+    )
+    logger.info(f"Loading yields from {uri=:s}")
+    return pandas.read_parquet(path=uri)

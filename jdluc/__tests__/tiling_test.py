@@ -5,10 +5,8 @@ from jdluc.tiling import (
     PARTITIONING_TO_IS_VALID_TILE_ID,
     Partitioning,
     get_lat_lon_for_tile_id,
-    get_tile_clusters,
     get_tile_id_for_lat_lon,
     iter_ten_degree_tile_id_for_geometry,
-    tiles_are_adjacent,
 )
 
 
@@ -61,46 +59,3 @@ def test_iter_ten_degree_tile_id_for_geometry(
     geometry: shapely.Polygon | shapely.MultiPolygon, expected: tuple[str, ...]
 ) -> None:
     assert tuple(iter_ten_degree_tile_id_for_geometry(geometry=geometry)) == expected
-
-
-@pytest.mark.parametrize(
-    ("left", "right", "expected"),
-    (
-        ("00N_000W", "00N_000W", False),
-        ("00N_000W", "00S_000W", False),
-        ("00N_000W", "00N_000E", False),
-        ("00N_000W", "00S_000E", False),
-        ("00N_000W", "00N_010W", True),
-        ("00N_000W", "00S_010W", True),
-        ("00N_000W", "00N_010E", True),
-        ("00N_000W", "00S_010E", True),
-        ("00N_000W", "10N_000E", True),
-        ("00N_000W", "10N_000W", True),
-        ("00N_000W", "10S_000E", True),
-        ("00N_000W", "10S_000W", True),
-        #
-        ("60N_180W", "60N_170W", True),
-        ("60N_170W", "60N_180W", True),
-        ("60N_180W", "60N_170E", True),
-        ("60N_170E", "60N_180W", True),
-    ),
-)
-def test_is_adjacent(left: str, right: str, expected: bool) -> None:
-    assert tiles_are_adjacent(left=left, right=right) is expected
-
-
-def test_get_tile_clusters() -> None:
-    result = get_tile_clusters(
-        tile_ids={"A", "B", "C", "E", "F", "H", "I"},
-        is_adjacent=lambda l, r: abs(ord(l) - ord(r)) == 1,
-        edge_exclusions={("H", "I")},
-    )
-    assert len(result) == 4
-    assert set("ABC") in result
-    assert set("EF") in result
-    assert {
-        "H",
-    } in result
-    assert {
-        "I",
-    } in result

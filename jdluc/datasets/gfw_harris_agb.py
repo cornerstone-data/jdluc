@@ -4,7 +4,7 @@ license: CC BY 4.0
 
 year: 2000
 
-Global maps of twenty-first century forest carbon fluxes. Nature Climate Change, 11, 234–240. DOI 10.1038/s41558-020-00976-6.
+Global maps of twenty-first century forest carbon fluxes. Nature Climate Change, 11, 234-240. DOI 10.1038/s41558-020-00976-6.
 
 https://data.globalforestwatch.org/datasets/gfw::aboveground-live-woody-biomass-density
 
@@ -16,8 +16,6 @@ https://data.globalforestwatch.org/datasets/gfw::aboveground-live-woody-biomass-
 """
 
 import urllib.parse
-
-import rasterio.enums
 
 from jdluc import tiling, utils
 from jdluc.datasets import base
@@ -39,10 +37,10 @@ def _save_tile_id_to_local_path(local_path: str, tile_id: str) -> None:
 
 DATASET = base.RasterDataset(
     band_names=["aboveground-biomass-mg-per-ha"],
+    band_type=base.BandType.INTENSIVE,
     no_data=(1 << 16) - 1,
     partitioning=tiling.Partitioning.TEN_DEGREE_TILE,
     product_name="harris-agb",
-    resampling=rasterio.enums.Resampling.bilinear,
     save_tile_id_to_local_path=_save_tile_id_to_local_path,
     source_name="gfw",
     version="v0",

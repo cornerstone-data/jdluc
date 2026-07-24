@@ -7,12 +7,12 @@ requires-python = ">=3.14,<3.15"
 
 dependencies = [
     "GitPython",
+    "bokeh",
     "dask",
+    "distributed",
     "gcsfs",
     "geopandas",
-    "google-cloud-storage",
     "netCDF4",
-    "networkx",
     "pandas",
     "pyarrow",
     "python-dotenv",
@@ -50,11 +50,6 @@ log_cli_level = "INFO"
 
 [[tool.mypy.overrides]]
 module = [
-    "google",
-    "google.*",
-    "google.cloud",
-    "google.cloud.storage",
-    "google.cloud.storage.*",
     "rasterio",
     "rasterio.*",
 ]
@@ -69,9 +64,48 @@ root_package = "jdluc"
 name = "ETL"
 type = "layers"
 layers = [
-    "jdluc.emissions_factors",
-    "jdluc.attribution",
-    "jdluc.emissions",
+    "jdluc.trace",
+    "jdluc.attribute",
+    "jdluc.jurisdictional_direct | jdluc.statistical",
+    "jdluc.emit",
     "jdluc.harmonize",
     "jdluc.ingest",
+]
+
+[[tool.importlinter.contracts]]
+name = "Utilities are foundational"
+type = "forbidden"
+source_modules = [
+    "jdluc.config",
+    "jdluc.continents",
+    "jdluc.geo",
+    "jdluc.storage",
+    "jdluc.tiling",
+    "jdluc.utils",
+]
+forbidden_modules = [
+    "jdluc.attribute",
+    "jdluc.emit",
+    "jdluc.harmonize",
+    "jdluc.ingest",
+    "jdluc.jurisdictional_direct",
+    "jdluc.statistical",
+    "jdluc.trace",
+    "jdluc.datasets",
+]
+
+[[tool.importlinter.contracts]]
+name = "Datasets never import the pipeline"
+type = "forbidden"
+source_modules = [
+    "jdluc.datasets",
+]
+forbidden_modules = [
+    "jdluc.attribute",
+    "jdluc.emit",
+    "jdluc.harmonize",
+    "jdluc.ingest",
+    "jdluc.jurisdictional_direct",
+    "jdluc.statistical",
+    "jdluc.trace",
 ]

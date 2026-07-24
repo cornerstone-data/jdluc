@@ -1,11 +1,11 @@
 exclude: |
-  (?x)^(specs/analyses/)
+  (?x)^(analyses/)
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.13
     hooks:
       - id: ruff-check
-        args: [--fix, "--select=F,I,UP"]
+        args: [--fix, "--select=B,C4,F,I,PIE,RUF,SIM,UP,W"]
       - id: ruff-format
   - repo: https://github.com/seddonym/import-linter
     rev: v2.11
@@ -20,9 +20,17 @@ repos:
         language: system
         entry: uv run mypy jdluc
         pass_filenames: false
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.11.26
+    hooks:
+      - id: uv-lock
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
     hooks:
+      - id: check-added-large-files
+      - id: check-merge-conflict
       - id: check-yaml
+      - id: check-toml
+      - id: debug-statements
       - id: end-of-file-fixer
       - id: trailing-whitespace
